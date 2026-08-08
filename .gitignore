@@ -18,4 +18,4 @@ node_modules/
 
 # Editor
 .idea/
-.vscode/
+.vscode/out/
