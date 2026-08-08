@@ -1,0 +1,24 @@
+[package]
+name = "aetherdz-provider"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aetherdz provider trait + OpenAI-compatible SSE streaming client"
+
+[dependencies]
+aetherdz-core = { path = "../aetherdz-core" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+
+[features]
+default = ["zen"]
+# Feature-gated providers. All speak the OpenAI-compatible wire format in
+# Phase 0; the gates control which providers are registered.
+zen = []
+openai = []
+ollama = []

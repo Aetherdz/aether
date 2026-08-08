@@ -1,0 +1,48 @@
+Usage: aether [options] [command]
+
+Aether - a cross-platform terminal AI coding agent. Building tools that break
+assumptions.
+
+Options:
+  -v, --version                output the version number
+  --no-tui                     force the classic readline REPL instead of the
+                               interactive TUI
+  -h, --help                   display help for command
+
+Commands:
+  ask [options] <question>     ask a one-shot question and stream the answer
+  use <spec>                   set the default provider and/or model (e.g.
+                               aether use zen/claude-sonnet-5)
+  models [options] [provider]  list models for a provider (default provider if
+                               omitted; zen fetches live)
+  providers                    list all providers with key status
+  swarm [options] <task>       decompose a task and run parallel subagents
+  agent [options] <task>       route a task to a subagent profile and run it
+  agents                       list agent profiles
+  jobs [id]                    show background job status (list all when no id
+                               is given)
+  sessions                     manage saved chat sessions
+  doctor                       run environment diagnostics (config, keys,
+                               sessions)
+  upgrade                      check npm registry for the latest version
+  completions <shell>          print shell completion script (bash, zsh, fish)
+  alias                        manage command aliases
+  config                       view or edit the config file
+  connect                      interactive provider setup — pick a provider and
+                               paste your key (the opencode /connect pattern)
+  login <provider>             save an API key for a provider (e.g. aether login
+                               openai)
+  logout <provider>            remove the saved API key for a provider
+  keys                         show which API keys are configured and where
+  login-device                 OAuth device flow sign-in (github, google) — the
+                               opencode pattern
+  logout-device                remove a device-flow sign-in (github, google)
+  cache                        token-efficiency cache (repeated prompts cost 0
+                               tokens)
+  status                       show current configuration summary
+  cost                         show approximate usage totals from saved sessions
+  stats                        show aggregated token usage across all sessions
+  mcp                          manage MCP servers
+  sync                         sync sessions across devices (free)
+  recall <query>               search every past session for a phrase
+                               (cross-session memory)

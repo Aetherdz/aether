@@ -1,0 +1,10 @@
+[package]
+name = "aetherdz-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aetherdz terminal UI (placeholder in Phase 0; ratatui arrives in Phase 4)"
+
+[dependencies]
+thiserror.workspace = true

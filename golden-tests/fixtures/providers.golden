@@ -1,0 +1,23 @@
+┌──────────────────────────────────────────────────────── providers ─────────────────────────────────────────────────────────┐
+│  * zen          FREE       none needed                                   Free OpenAI-compatible endpoint, no API key required│
+│    openai       PAID       not configured   OPENAI_API_KEY               OpenAI hosted models                                │
+│    anthropic    PAID       not configured   ANTHROPIC_API_KEY            Anthropic Claude models                             │
+│    google       FREE/PAID  not configured   GOOGLE_GENERATIVE_AI_API_KEY Google Gemini models (free tier available)          │
+│    deepseek     PAID       not configured   DEEPSEEK_API_KEY             DeepSeek hosted models                              │
+│    openrouter   FREE/PAID  not configured   OPENROUTER_API_KEY           Aggregated models incl. free tiers                  │
+│    ollama       FREE       local                                         Local Ollama server, no key                         │
+│    groq         FREE/PAID  not configured   GROQ_API_KEY                 Fast inference on Llama/other open models           │
+│    mistral      FREE/PAID  not configured   MISTRAL_API_KEY              Mistral Large/Small + Codestral                     │
+│    xai          PAID       not configured   XAI_API_KEY                  Grok models by xAI                                  │
+│    cerebras     FREE/PAID  not configured   CEREBRAS_API_KEY             Ultra-fast Llama on Cerebras hardware               │
+│    togetherai   FREE/PAID  not configured   TOGETHER_API_KEY             Open models incl. DeepSeek, Llama, Qwen             │
+│    fireworks    FREE/PAID  not configured   FIREWORKS_API_KEY            Fast open-model inference                           │
+│    perplexity   PAID       not configured   PERPLEXITY_API_KEY           Sonar models with web-grounded answers              │
+│    moonshot     PAID       not configured   MOONSHOT_API_KEY             Kimi models (long context)                          │
+│    minimax      PAID       not configured   MINIMAX_API_KEY              MiniMax M2/Text models                              │
+│    huggingface  FREE/PAID  not configured   HF_TOKEN                     Open models via HF Inference Router                 │
+│    lmstudio     FREE       none needed                                   Local LM Studio server, no key                      │
+│    github       FREE/PAID  not configured   GITHUB_TOKEN                 Free GPT models via GitHub Models                   │
+│                                                                                                                              │
+│  * default  |  env var in parentheses is the required key source                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
