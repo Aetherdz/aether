@@ -44,3 +44,23 @@
 - **D2 (Phase 4b):** adopt agentive's RunnerEvent as our event vocabulary → TuiEvent. This kills the TS bridge.ts translation layer.
 - **D3 (Phase 4a):** port agent-code's PermissionChecker enum → our single `Sandbox::check(path|cmd) -> Result<()>`.
 - **D4 (All):** reasoning_content is a first-class stream event in the compatible client from day 1.
+---
+## Phase 3/4 REFINEMENT (Aug 2026 — second research pass, verified from official SDKs)
+
+### Phase 3 (MCP) — upgraded decisions from rmcp official docs
+- rmcp targets protocol revisions **2025-11-25 and 2026-07-28** (offi rust-sdk). New capabilities to USE: subscriptions (`listen()`), multi-round-trip requests (elicitation/sampling inside tools/call), response caching, client OAuth. → Our MCP client gets these for free via rmcp API.
+- **Legacy 2024-11-05 HTTP+SSE is a deliberate non-goal of rmcp** (confirmed in official docs). Decision stands: thin hand-rolled SSE transport ONLY to talk to legacy-only servers — otherwise streamable HTTP only. Front any legacy server with a small proxy, don't ship legacy client code by default (feature-gate `legacy-sse`).
+- Client API confirmed: `StreamableHttpClientTransport::from_uri(uri)` + `ClientInfo::default().serve(transport)`; reqwest backend behind `transport-streamable-http-client-reqwest` feature. Stdio: `TokioChildProcess`. Session-id handling automatic.
+- Streamable HTTP SSE parsing is handled internally (`client-side-sse` feature) — no manual SSE parser needed in our MCP crate.
+
+### Phase 4d (TUI — upgraded decisions from ratatui 0.30.2 official examples)
+- **Chat transcript = `List` in `direction: bottom_to_top`** (chat-log idiom) + `tui-scrollbar` widget for mouse-wheel. (verified ratatui List docs + tui-widgets/tui-scrollbar)
+- **Markdown rendering** = `tui-markdown` crate (NOT hand-rolled) — ratatui org official.
+- **Syntax-highlighted code blocks** = `tui-code-block` (syntect themes, 8 curated) — far beyond Ink.
+- **Ctrl+P palette + model picker = `Popup` + `Clear`** overlay pattern (centered widget over dimmed background, drawn last) — official ratatui pattern. Slash-command autocomplete = same Popup pattern with a filtered List.
+- **Input = `ratatui-textarea`** (multi-line, cursor, key handling) — official crate, saves hundreds of LOC vs hand-rolling.
+- Resize: ratatui re-renders automatically; no resize plumbing needed in app state.
+- Crate versions pinned: ratatui 0.30.2, crossterm 0.29, tui-markdown, tui-code-block, ratatui-textarea, tui-scrollbar.
+
+### D5 (new): rmcp is a full client SDK — do NOT hand-roll MCP JSON-RPC. TS did (jcode does); we don't. Our only hand-rolled piece stays the thin legacy-SSE adapter (feature-gated).
+### D6 (new): TUI scroll/palette/markdown via official ratatui-org crates — never hand-roll widgets the ecosystem ships (ratatui-textarea, tui-markdown, tui-code-block, tui-scrollbar, Popup/Clear pattern).
