@@ -61,6 +61,7 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
 mod tests {
     use super::{atomic_write, ensure_dir, safe_join};
     use crate::error::Error;
+    use std::path::Path;
 
     #[test]
     fn safe_join_rejects_traversal() {

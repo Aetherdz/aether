@@ -74,10 +74,10 @@ fn default_model() -> String {
 /// Resolve the config directory: `AETHER_CONFIG_DIR` override, else
 /// `~/.config/aether` via the `dirs` crate.
 pub fn config_dir() -> Result<PathBuf> {
-    if let Ok(override_dir) = std::env::var("AETHER_CONFIG_DIR") {
-        if !override_dir.trim().is_empty() {
-            return Ok(PathBuf::from(override_dir));
-        }
+if let Ok(override_dir) = std::env::var("AETHER_CONFIG_DIR")
+        && !override_dir.trim().is_empty()
+    {
+        return Ok(PathBuf::from(override_dir));
     }
     let base = dirs::config_dir()
         .ok_or_else(|| Error::Config("could not resolve the user config directory".to_string()))?;

@@ -88,7 +88,7 @@ impl OpenAICompatibleClient {
     pub async fn stream_chat(
         &self,
         request: &ChatRequest,
-    ) -> Result<impl Stream<Item = Result<ChatChunk, Error>> + Send + '_> {
+    ) -> Result<impl Stream<Item = Result<ChatChunk>> + Send + '_> {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
         let mut builder = self.http.post(&url).header(CONTENT_TYPE, "application/json");
         if let Some(key) = &self.api_key {
@@ -109,18 +109,21 @@ impl OpenAICompatibleClient {
 }
 
 /// Convert a raw byte stream into a stream of parsed chat chunks.
-fn sse_chunk_stream(
-    byte_stream: impl Stream<Item = Result<reqwest::Bytes, reqwest::Error>> + Send + 'static,
-) -> impl Stream<Item = Result<ChatChunk, Error>> + Send {
-    let mut parser = SseParser::new();
-    let mut byte_stream = Box::pin(byte_stream);
+fn sse_chunk_stream<B>(
+    byte_stream: impl Stream<Item = std::result::Result<B, reqwest::Error>> + Send + 'static,
+) -> impl Stream<Item = Result<ChatChunk>> + Send
+where
+    B: AsRef<[u8]> + 'static,
+{
+    let parser = SseParser::new();
+    let byte_stream = Box::pin(byte_stream);
     stream::unfold((parser, byte_stream), |(mut parser, mut byte_stream)| async move {
         loop {
             if let Some(data) = parser.pop_event() {
                 return Some((parse_chunk(&data), (parser, byte_stream)));
             }
             match byte_stream.next().await {
-                Some(Ok(bytes)) => parser.push(&bytes),
+                Some(Ok(bytes)) => parser.push(bytes.as_ref()),
                 Some(Err(e)) => {
                     return Some((Err(Error::Network(e.to_string())), (parser, byte_stream)));
                 }
@@ -137,7 +140,7 @@ fn sse_chunk_stream(
 }
 
 /// Parse one SSE `data:` payload into a chat chunk.
-fn parse_chunk(data: &str) -> Result<ChatChunk, Error> {
+fn parse_chunk(data: &str) -> Result<ChatChunk> {
     if data == "[DONE]" {
         return Ok(ChatChunk {
             finish_reason: Some("stop".to_string()),

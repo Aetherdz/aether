@@ -45,7 +45,7 @@ pub fn redact_secret(value: &str) -> String {
     }
     let mut out = String::with_capacity(value.len());
     out.push_str(&value[..2]);
-    out.push_str("…");
+    out.push('…');
     out.push_str(&value[value.len() - 2..]);
     out
 }

@@ -10,7 +10,7 @@ use aetherdz_core::config::{AetherConfig, CustomProviderConfig, DEFAULT_MODEL, D
 use aetherdz_core::error::{Error, Result};
 
 use crate::model::{is_zen_free_model, static_models};
-use crate::provider::{OpenAIProvider, Pricing, Provider};
+use crate::provider::{OpenAIProvider, Pricing};
 
 /// Zen endpoint base URL (from `registry.ts`).
 pub const ZEN_BASE_URL: &str = "https://opencode.ai/zen/v1";
@@ -34,7 +34,6 @@ pub fn zen_provider() -> OpenAIProvider {
 }
 
 /// OpenAI hosted models (requires `OPENAI_API_KEY`).
-#[cfg(feature = "openai")]
 pub fn openai_provider() -> OpenAIProvider {
     OpenAIProvider {
         id: "openai".to_string(),
@@ -50,33 +49,82 @@ pub fn openai_provider() -> OpenAIProvider {
     }
 }
 
-/// Local Ollama server (no key).
-#[cfg(feature = "ollama")]
-pub fn ollama_provider() -> OpenAIProvider {
-    OpenAIProvider {
-        id: "ollama".to_string(),
-        name: "Ollama (local)".to_string(),
-        kind: "ollama".to_string(),
-        base_url: "http://localhost:11434/api".to_string(),
-        key_env: None,
-        needs_key: false,
-        free: Pricing::Free,
-        description: "Local Ollama server, no key".to_string(),
-        default_model: "llama3.2".to_string(),
-        static_models: static_models("ollama"),
-    }
+/// One row of a built-in provider descriptor (mirrors `registry.ts`).
+struct BuiltinSpec {
+    id: &'static str,
+    name: &'static str,
+    kind: &'static str,
+    key_env: Option<&'static str>,
+    free: Pricing,
+    description: &'static str,
+    default_model: &'static str,
+    needs_key: bool,
 }
 
-/// The feature-gated built-in provider set.
+/// The full built-in provider catalog, same set and order as the TS registry.
+const BUILTINS: &[BuiltinSpec] = &[
+    BuiltinSpec { id: "zen", name: "OpenCode Zen", kind: "zen", key_env: None, needs_key: false, free: Pricing::Free, description: "Free OpenAI-compatible endpoint, no API key required", default_model: "deepseek-v4-flash-free" },
+    BuiltinSpec { id: "openai", name: "OpenAI", kind: "openai", key_env: Some("OPENAI_API_KEY"), needs_key: true, free: Pricing::Paid, description: "OpenAI hosted models", default_model: "gpt-4o" },
+    BuiltinSpec { id: "anthropic", name: "Anthropic Claude", kind: "anthropic", key_env: Some("ANTHROPIC_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Anthropic Claude models", default_model: "claude-sonnet-4-5" },
+    BuiltinSpec { id: "google", name: "Google Gemini", kind: "google", key_env: Some("GOOGLE_GENERATIVE_AI_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Google Gemini models (free tier available)", default_model: "gemini-3-flash" },
+    BuiltinSpec { id: "deepseek", name: "DeepSeek", kind: "deepseek", key_env: Some("DEEPSEEK_API_KEY"), needs_key: true, free: Pricing::Paid, description: "DeepSeek hosted models", default_model: "deepseek-chat" },
+    BuiltinSpec { id: "openrouter", name: "OpenRouter", kind: "openrouter", key_env: Some("OPENROUTER_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Aggregated models incl. free tiers", default_model: "deepseek/deepseek-chat" },
+    BuiltinSpec { id: "ollama", name: "Ollama (local)", kind: "ollama", key_env: None, needs_key: false, free: Pricing::Free, description: "Local Ollama server, no key", default_model: "llama3.2" },
+    BuiltinSpec { id: "groq", name: "Groq", kind: "groq", key_env: Some("GROQ_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Fast inference on Llama/other open models", default_model: "llama-3.3-70b-versatile" },
+    BuiltinSpec { id: "mistral", name: "Mistral", kind: "mistral", key_env: Some("MISTRAL_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Mistral Large/Small + Codestral", default_model: "mistral-large-latest" },
+    BuiltinSpec { id: "xai", name: "xAI", kind: "xai", key_env: Some("XAI_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Grok models by xAI", default_model: "grok-4" },
+    BuiltinSpec { id: "cerebras", name: "Cerebras", kind: "cerebras", key_env: Some("CEREBRAS_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Ultra-fast Llama on Cerebras hardware", default_model: "llama3.1-8b" },
+    BuiltinSpec { id: "togetherai", name: "Together AI", kind: "togetherai", key_env: Some("TOGETHER_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Open models incl. DeepSeek, Llama, Qwen", default_model: "deepseek-ai/DeepSeek-V3" },
+    BuiltinSpec { id: "fireworks", name: "Fireworks", kind: "fireworks", key_env: Some("FIREWORKS_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Fast open-model inference", default_model: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
+    BuiltinSpec { id: "perplexity", name: "Perplexity", kind: "perplexity", key_env: Some("PERPLEXITY_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Sonar models with web-grounded answers", default_model: "sonar-pro" },
+    BuiltinSpec { id: "moonshot", name: "Moonshot", kind: "moonshot", key_env: Some("MOONSHOT_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Kimi models (long context)", default_model: "kimi-k2" },
+    BuiltinSpec { id: "minimax", name: "MiniMax", kind: "minimax", key_env: Some("MINIMAX_API_KEY"), needs_key: true, free: Pricing::Paid, description: "MiniMax M2/Text models", default_model: "MiniMax-M2" },
+    BuiltinSpec { id: "huggingface", name: "HuggingFace", kind: "huggingface", key_env: Some("HF_TOKEN"), needs_key: true, free: Pricing::FreePaid, description: "Open models via HF Inference Router", default_model: "qwen/Qwen2.5-72B-Instruct" },
+    BuiltinSpec { id: "lmstudio", name: "LM Studio", kind: "lmstudio", key_env: None, needs_key: false, free: Pricing::Free, description: "Local LM Studio server, no key", default_model: "local-model" },
+    BuiltinSpec { id: "github", name: "GitHub Models", kind: "github", key_env: Some("GITHUB_TOKEN"), needs_key: true, free: Pricing::FreePaid, description: "Free GPT models via GitHub Models", default_model: "gpt-4.1" },
+];
+
+/// Build the provided catalog preserving the TS order.
 pub fn builtin_providers() -> Vec<OpenAIProvider> {
-    let mut providers = Vec::new();
-    #[cfg(feature = "zen")]
-    providers.push(zen_provider());
-    #[cfg(feature = "openai")]
-    providers.push(openai_provider());
-    #[cfg(feature = "ollama")]
-    providers.push(ollama_provider());
+    // zen is special-cased first (default provider), then the rest.
+    let mut providers = vec![zen_provider()];
+    providers.extend(BUILTINS.iter().filter(|b| b.id != "zen").map(|b| OpenAIProvider {
+        id: b.id.to_string(),
+        name: b.name.to_string(),
+        kind: b.kind.to_string(),
+        base_url: platform_base_url(b.id, b.kind),
+        key_env: b.key_env.map(str::to_string),
+        needs_key: b.needs_key,
+        free: b.free,
+        description: b.description.to_string(),
+        default_model: b.default_model.to_string(),
+        static_models: static_models(b.id),
+    }));
     providers
+}
+
+/// Base URL for a built-in provider id (mirrors TS `baseUrl`).
+fn platform_base_url(id: &str, kind: &str) -> String {
+    match id {
+        "anthropic" => "https://api.anthropic.com/v1".to_string(),
+        "google" => "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+        "deepseek" => "https://api.deepseek.com/v1".to_string(),
+        "openrouter" => "https://openrouter.ai/api/v1".to_string(),
+        "ollama" => "http://localhost:11434/api".to_string(),
+        "groq" => "https://api.groq.com/openai/v1".to_string(),
+        "mistral" => "https://api.mistral.ai/v1".to_string(),
+        "xai" => "https://api.x.ai/v1".to_string(),
+        "cerebras" => "https://api.cerebras.ai/v1".to_string(),
+        "togetherai" => "https://api.together.xyz/v1".to_string(),
+        "fireworks" => "https://api.fireworks.ai/inference/v1".to_string(),
+        "perplexity" => "https://api.perplexity.ai/v1".to_string(),
+        "moonshot" => "https://api.moonshot.cn/v1".to_string(),
+        "minimax" => "https://api.minimax.chat/v1".to_string(),
+        "huggingface" => "https://router.huggingface.co/v1".to_string(),
+        "lmstudio" => "http://localhost:1234/v1".to_string(),
+        "github" => "https://models.github.ai/inference".to_string(),
+        _ => format!("https://{kind}.aether.invalid/v1"),
+    }
 }
 
 /// All providers: built-ins plus custom providers from the config.
@@ -222,12 +270,13 @@ pub fn resolve_default(
         && std::env::var("OPENCODE_ZEN_API_KEY").is_err()
     {
         let model = provider.default_model.clone();
+        let notice = format!(
+            "model \"{wanted_model}\" on zen needs OPENCODE_ZEN_API_KEY; using free \"{model}\""
+        );
         return ResolvedModel {
             provider,
             model,
-            notice: Some(format!(
-                "model \"{wanted_model}\" on zen needs OPENCODE_ZEN_API_KEY; using free \"{model}\""
-            )),
+            notice: Some(notice),
         };
     }
 
@@ -241,13 +290,14 @@ pub fn resolve_default(
             provider.default_model.clone()
         };
         if chosen != wanted_model {
+            let notice = format!(
+                "model \"{wanted_model}\" not available on {}; using \"{chosen}\"",
+                provider.id
+            );
             return ResolvedModel {
                 provider,
                 model: chosen,
-                notice: Some(format!(
-                    "model \"{wanted_model}\" not available on {}; using \"{chosen}\"",
-                    provider.id
-                )),
+                notice: Some(notice),
             };
         }
     }
@@ -304,7 +354,7 @@ pub async fn fetch_zen_models() -> Result<Vec<String>> {
     let value: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| Error::Json(e))?;
+        .map_err(|e| Error::Network(e.to_string()))?;
     let ids = extract_model_ids(&value);
     if ids.is_empty() {
         return Err(Error::Provider(
@@ -369,7 +419,8 @@ mod tests {
         let mut c = config();
         c.default_provider = "openai".to_string();
         c.default_model = "gpt-4o".to_string();
-        std::env::remove_var("OPENAI_API_KEY");
+        // SAFETY: test-only; single-threaded test, no concurrent env access.
+        unsafe { std::env::remove_var("OPENAI_API_KEY") };
         let resolved = resolve_default(&c, None, None);
         assert_eq!(resolved.provider.id, "zen");
         assert!(resolved.notice.is_some());
