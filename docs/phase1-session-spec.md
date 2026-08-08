@@ -45,3 +45,10 @@ Public API (3-5 items):
 3. `cargo clippy -- -D warnings` (0 violations)
 4. Run: `aether sessions list` on an empty dir + with a dummy session; `aether recall "x"` returns hit
 5. Print: created file tree, `aether --help` under sessions, verification transcript.
+---
+## ADDENDUM (strategy manager, Aug 2026) — zen contract (verified from TS)
+Critical for Phase 0 verification (documented here since spec lives in repo):
+- base_url = `https://opencode.ai/zen/v1` (src/providers/registry.ts:40) — NO API key needed
+- default model = `deepseek-v4-flash-free`  (src/defaults.ts:2)
+- free models list (7): big-pickle, deepseek-v4-flash-free, laguna-s-2.1-free, ling-3.0-flash-free, ling-3.0-tiny-free, longcat-2.0-free (+1 more in ZEN_FREE_MODELS)
+- IMPORTANT aichat gap: aichat reads `reasoning_content` ONLY in openai.rs, NOT in openai_compatible.rs. zen/deepseek streams carry reasoning_content — we implement it in the compatible client from day 1 (our differentiator over aichat).
