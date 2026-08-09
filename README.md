@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Aetherdz/aetherdz"><img src="https://img.shields.io/badge/rust-1.97+-black?logo=rust&logoColor=white" alt="Rust 1.97+" /></a>
-  <a href="https://github.com/Aetherdz/aetherdz/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aetherdz" alt="MIT license" /></a>
-  <a href="https://github.com/Aetherdz/aetherdz"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/rust-1.97+-black?logo=rust&logoColor=white" alt="Rust 1.97+" /></a>
+  <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
 </p>
 
 ---

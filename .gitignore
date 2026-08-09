@@ -2,6 +2,8 @@
 /target
 **/*.rs.bk
 Cargo.lock
+# Machine-local cargo config (target-dir points at a local scratch disk)
+.cargo/
 # Aetherdz build output
 *.log
 

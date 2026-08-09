@@ -39,11 +39,13 @@ mkdir -p "$OUT"
 
 # TS oracle capture used to REGENERATE the fixtures on every run (overwriting
 # them). Kept but opt-in so CI never clobbers the goldens.
+# TS_CLI_DIR points at the TS reference checkout (default: sibling of this repo).
 capture_ts() {
-  (cd /home/abdozaik720/aether-cli && node dist/index.js --help      > "/home/abdozaik720/aetherdz/$FIX/aether-help.golden"  2>&1)
-  (cd /home/abdozaik720/aether-cli && node dist/index.js providers   > "/home/abdozaik720/aetherdz/$FIX/providers.golden"   2>&1)
-  (cd /home/abdozaik720/aether-cli && node dist/index.js models zen  > "/home/abdozaik720/aetherdz/$FIX/models-zen.golden"  2>&1)
-  (cd /home/abdozaik720/aether-cli && node dist/index.js sync status > "/home/abdozaik720/aetherdz/$FIX/sync-status.golden" 2>&1)
+  local ts="${TS_CLI_DIR:-../aether-cli}"
+  (cd "$ts" && node dist/index.js --help      > "$OLDPWD/$FIX/aether-help.golden"  2>&1)
+  (cd "$ts" && node dist/index.js providers   > "$OLDPWD/$FIX/providers.golden"   2>&1)
+  (cd "$ts" && node dist/index.js models zen  > "$OLDPWD/$FIX/models-zen.golden"   2>&1)
+  (cd "$ts" && node dist/index.js sync status > "$OLDPWD/$FIX/sync-status.golden"  2>&1)
 }
 if [ "${REFRESH_FIXTURES:-0}" = "1" ]; then
   echo "=== capture TS oracle (REFRESH_FIXTURES=1) ==="; capture_ts
