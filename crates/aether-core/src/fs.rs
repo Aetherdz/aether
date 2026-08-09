@@ -26,6 +26,22 @@ pub fn safe_join(base: &Path, name: &str) -> Result<PathBuf> {
     Ok(base.join(name))
 }
 
+/// Join a multi-level relative path onto `base`, rejecting escapes.
+///
+/// Unlike [`safe_join`] this accepts `a/b/c` but still refuses absolute
+/// paths, `..`, `.` and NUL bytes. The result is guaranteed to stay inside
+/// `base` (checked lexically, then by canonicalization when possible).
+pub fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf> {
+    if rel.is_empty()
+        || Path::new(rel).is_absolute()
+        || rel.split(['/', '\\']).any(|c| c.is_empty() || c == "." || c == "..")
+        || rel.contains('\0')
+    {
+        return Err(Error::PathTraversal(rel.to_string()));
+    }
+    Ok(base.join(rel))
+}
+
 /// Create a directory (and parents) if it does not exist.
 pub fn ensure_dir(path: &Path) -> Result<()> {
     if path.exists() {
@@ -59,7 +75,7 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{atomic_write, ensure_dir, safe_join};
+    use super::{atomic_write, ensure_dir, safe_join, safe_join_rel};
     use crate::error::Error;
     use std::path::Path;
 
@@ -73,6 +89,21 @@ mod tests {
             );
         }
         assert_eq!(safe_join(base, "ok.txt").unwrap(), base.join("ok.txt"));
+    }
+
+    #[test]
+    fn safe_join_rel_allows_nested_but_rejects_escape() {
+        let base = Path::new("/tmp/aether-test");
+        assert_eq!(
+            safe_join_rel(base, "src/lib.rs").unwrap(),
+            base.join("src/lib.rs")
+        );
+        for bad in ["../x", "/etc/passwd", "a/../../b", "..", ".", "", "a\0b", "a//b"] {
+            assert!(
+                matches!(safe_join_rel(base, bad), Err(Error::PathTraversal(_))),
+                "expected escape rejection for {bad:?}"
+            );
+        }
     }
 
     #[test]

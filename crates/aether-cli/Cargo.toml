@@ -11,6 +11,7 @@ name = "aether"
 path = "src/main.rs"
 
 [dependencies]
+aether-agent = { path = "../aether-agent" }
 aether-core = { path = "../aether-core" }
 aether-provider = { path = "../aether-provider" }
 aether-session = { path = "../aether-session" }

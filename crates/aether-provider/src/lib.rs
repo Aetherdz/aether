@@ -8,7 +8,10 @@ pub mod model;
 pub mod provider;
 pub mod registry;
 
-pub use client::{ChatChunk, ChatMessage, ChatRequest, OpenAICompatibleClient, Usage};
+pub use client::{
+    ChatChunk, ChatCompletion, ChatMessage, ChatRequest, CompletionChoice, CompletionMessage,
+    OpenAICompatibleClient, ToolCall, ToolCallFunction, ToolDef, ToolFunction, Usage,
+};
 pub use provider::{OpenAIProvider, Pricing, Provider};
 pub use registry::{
     fetch_zen_models, get_provider, key_is_set, key_status, list_providers, normalize_defaults,

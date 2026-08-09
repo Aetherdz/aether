@@ -11,7 +11,7 @@ use aether_core::error::{redact_secret, Error, Result};
 use futures::stream::{self, Stream};
 use futures::StreamExt;
 use reqwest::header::CONTENT_TYPE;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Connect timeout for all requests (TS uses 8s for its fetch calls).
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -105,13 +105,27 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
     pub stream: bool,
+    /// Function tools the model may call (omitted when absent).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<ToolDef>>,
 }
 
-/// A single chat message (string content only in Phase 0).
-#[derive(Debug, Clone, Serialize)]
+/// A single chat message.
+///
+/// The wire shape varies by role: user/assistant carry text in `content`,
+/// tool results carry `tool_call_id` + text, and assistant messages that
+/// invoke tools carry `tool_calls` with an empty (omitted) content.
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct ChatMessage {
     pub role: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub content: String,
+    /// Id of the tool call this message answers (role = "tool").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    /// Tool invocations requested by the assistant (role = "assistant").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 /// Token usage reported by the provider (present on the final chunk).
@@ -128,6 +142,65 @@ pub struct ChatChunk {
     pub content: Option<String>,
     pub finish_reason: Option<String>,
     pub usage: Option<Usage>,
+}
+
+/// A function tool offered to the model (OpenAI `tools[]` item).
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolDef {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: ToolFunction,
+}
+
+/// The name/schema half of a [`ToolDef`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolFunction {
+    pub name: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<serde_json::Value>,
+}
+
+/// A tool invocation requested by the model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: ToolCallFunction,
+}
+
+/// The name + JSON-encoded arguments of a [`ToolCall`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCallFunction {
+    pub name: String,
+    pub arguments: String,
+}
+
+/// A non-streaming chat completion response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChatCompletion {
+    pub choices: Vec<CompletionChoice>,
+    #[serde(default)]
+    pub usage: Option<Usage>,
+}
+
+/// One choice of a non-streaming completion.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompletionChoice {
+    pub message: CompletionMessage,
+    #[serde(default)]
+    pub finish_reason: Option<String>,
+}
+
+/// The assistant message of a non-streaming completion.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompletionMessage {
+    pub role: String,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 /// OpenAI-compatible streaming client.
@@ -199,6 +272,64 @@ impl OpenAICompatibleClient {
                 Err(err) => return Err(err),
             }
         }
+    }
+
+    /// Run one non-streaming completion, returning the full assistant message
+    /// (text and/or tool calls). Retries transient failures exactly like
+    /// [`stream_chat_with_retry`].
+    pub async fn complete(
+        &self,
+        request: &ChatRequest,
+    ) -> Result<ChatCompletion> {
+        self.complete_with_retry(request, RetryPolicy::default()).await
+    }
+
+    /// Non-streaming completion with an explicit retry policy.
+    pub async fn complete_with_retry(
+        &self,
+        request: &ChatRequest,
+        policy: RetryPolicy,
+    ) -> Result<ChatCompletion> {
+        let mut attempt: u32 = 0;
+        loop {
+            attempt += 1;
+            match self.try_complete(request).await {
+                Ok(completion) => return Ok(completion),
+                Err(err) if policy.can_retry(attempt) && retryable_error(&err) => {
+                    let delay = backoff_delay(
+                        attempt,
+                        policy.base_delay,
+                        policy.max_delay,
+                        policy.min_delay,
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    /// Send a non-streaming request and parse the JSON completion body.
+    async fn try_complete(&self, request: &ChatRequest) -> Result<ChatCompletion> {
+        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let mut builder = self.http.post(&url).header(CONTENT_TYPE, "application/json");
+        if let Some(key) = &self.api_key {
+            builder = builder.bearer_auth(key);
+        }
+        let response = builder
+            .json(request)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(Error::Provider(format!("HTTP {status}: {body}")));
+        }
+        response
+            .json::<ChatCompletion>()
+            .await
+            .map_err(|e| Error::Provider(format!("malformed completion body: {e}")))
     }
 
     /// Send the request and validate the response status; on a retryable
@@ -514,5 +645,116 @@ mod tests {
         assert!(!p.can_retry(3));
         let no_retry = RetryPolicy { max_attempts: 1, ..RetryPolicy::default() };
         assert!(!no_retry.can_retry(1));
+    }
+
+    #[test]
+    fn request_serializes_tools_and_skips_when_absent() {
+        let def = ToolDef {
+            kind: "function".to_string(),
+            function: ToolFunction {
+                name: "read_file".to_string(),
+                description: "Read a file".to_string(),
+                parameters: Some(serde_json::json!({"type": "object", "properties": {"path": {"type": "string"}}})),
+            },
+        };
+        let req = ChatRequest {
+            model: "m".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+                ..ChatMessage::default()
+            }],
+            temperature: None,
+            stream: false,
+            tools: Some(vec![def]),
+        };
+        let json: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["tools"][0]["type"], "function");
+        assert_eq!(json["tools"][0]["function"]["name"], "read_file");
+        assert!(json["tools"][0]["function"]["parameters"].is_object());
+
+        let plain = ChatRequest {
+            tools: None,
+            ..req
+        };
+        let json = serde_json::to_value(&plain).unwrap();
+        assert!(json.get("tools").is_none());
+    }
+
+    #[test]
+    fn message_skips_empty_content_and_tool_fields() {
+        let user = ChatMessage {
+            role: "user".to_string(),
+            content: "hi".to_string(),
+            ..ChatMessage::default()
+        };
+        let json = serde_json::to_value(&user).unwrap();
+        assert_eq!(json["content"], "hi");
+        assert!(json.get("tool_calls").is_none());
+        assert!(json.get("tool_call_id").is_none());
+
+        let assistant = ChatMessage {
+            role: "assistant".to_string(),
+            content: String::new(),
+            tool_calls: Some(vec![ToolCall {
+                id: "call_1".to_string(),
+                kind: "function".to_string(),
+                function: ToolCallFunction {
+                    name: "read_file".to_string(),
+                    arguments: r#"{"path":"a.txt"}"#.to_string(),
+                },
+            }]),
+            ..ChatMessage::default()
+        };
+        let json = serde_json::to_value(&assistant).unwrap();
+        assert!(json.get("content").is_none(), "empty content must be omitted");
+        assert_eq!(json["tool_calls"][0]["function"]["name"], "read_file");
+
+        let tool_result = ChatMessage {
+            role: "tool".to_string(),
+            content: "contents".to_string(),
+            tool_call_id: Some("call_1".to_string()),
+            ..ChatMessage::default()
+        };
+        let json = serde_json::to_value(&tool_result).unwrap();
+        assert_eq!(json["role"], "tool");
+        assert_eq!(json["tool_call_id"], "call_1");
+    }
+
+    #[test]
+    fn completion_parses_tool_calls() {
+        let raw = r#"{
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_9",
+                        "type": "function",
+                        "function": {"name": "run_command", "arguments": "{\"cmd\":\"ls\"}"}
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13}
+        }"#;
+        let completion: ChatCompletion = serde_json::from_str(raw).unwrap();
+        let choice = &completion.choices[0];
+        assert_eq!(choice.finish_reason.as_deref(), Some("tool_calls"));
+        assert!(choice.message.content.is_none());
+        let calls = choice.message.tool_calls.as_ref().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_9");
+        assert_eq!(calls[0].function.name, "run_command");
+        assert_eq!(completion.usage.unwrap().total_tokens, Some(13));
+    }
+
+    #[test]
+    fn completion_parses_plain_text() {
+        let raw = r#"{"choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#;
+        let completion: ChatCompletion = serde_json::from_str(raw).unwrap();
+        assert!(completion.choices[0].message.tool_calls.is_none());
+        assert_eq!(completion.choices[0].message.content.as_deref(), Some("done"));
+        assert_eq!(completion.choices[0].finish_reason.as_deref(), Some("stop"));
     }
 }

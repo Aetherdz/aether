@@ -1,0 +1,17 @@
+[package]
+name = "aether-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aetherdz 3-model agent loop: plan -> build -> route with tool execution"
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+aether-provider = { path = "../aether-provider" }
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+futures.workspace = true
+thiserror.workspace = true

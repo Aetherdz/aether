@@ -41,6 +41,24 @@ async fn main() -> Result<()> {
         Command::Recall { phrase } => cmd_recall(&phrase),
         Command::Sync { action } => cmd_sync(action).await,
         Command::Tui => cmd_tui(),
+        Command::Agent {
+            task,
+            provider,
+            plan_model,
+            build_model,
+            route_model,
+            iterations,
+        } => {
+            cmd_agent(
+                &task,
+                provider.as_deref(),
+                plan_model.as_deref(),
+                build_model.as_deref(),
+                route_model.as_deref(),
+                iterations,
+            )
+            .await
+        }
     }
 }
 
@@ -108,9 +126,11 @@ async fn stream_print(client: &OpenAICompatibleClient, model: &str, content: &st
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: content.to_string(),
+            ..ChatMessage::default()
         }],
         temperature: None,
         stream: true,
+        tools: None,
     };
     let chunks = client.stream_chat(&request).await?;
     futures::pin_mut!(chunks);
@@ -237,7 +257,7 @@ async fn cmd_sessions(action: SessionsAction) -> Result<()> {
             let history = session
                 .read_messages()?
                 .into_iter()
-                .map(|m| ChatMessage { role: m.role, content: m.content })
+                .map(|m| ChatMessage { role: m.role, content: m.content, ..ChatMessage::default() })
                 .collect::<Vec<_>>();
             println!("resuming {} — {}", session.id(), session.title()?);
             cmd_chat_with_history(session, history).await
@@ -363,10 +383,10 @@ async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> R
             break;
         }
         session.append("user", &line)?;
-        messages.push(ChatMessage { role: "user".to_string(), content: line.clone() });
+        messages.push(ChatMessage { role: "user".to_string(), content: line.clone(), ..ChatMessage::default() });
         println!("\n{MODEL_SEPARATOR}");
         let (reply, usage) = stream_collect(&client, &model, &messages).await?;
-        messages.push(ChatMessage { role: "assistant".to_string(), content: reply.clone() });
+        messages.push(ChatMessage { role: "assistant".to_string(), content: reply.clone(), ..ChatMessage::default() });
         session.append("assistant", &reply)?;
         if let Some(u) = usage {
             session.append_usage(SessionMeta {
@@ -380,6 +400,44 @@ async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> R
     Ok(())
 }
 
+async fn cmd_agent(
+    task: &str,
+    provider: Option<&str>,
+    plan_model: Option<&str>,
+    build_model: Option<&str>,
+    route_model: Option<&str>,
+    iterations: u32,
+) -> Result<()> {
+    let config = load_config()?;
+    let (client, model) = resolve(&config, provider, None);
+    let plan_model = plan_model.unwrap_or(&model).to_string();
+    let build_model = build_model.unwrap_or(&model).to_string();
+    let route_model = route_model.unwrap_or(&model).to_string();
+    let cwd = std::env::current_dir().map_err(|e| Error::Config(e.to_string()))?;
+
+    let agent = aether_agent::Agent::new(
+        Box::new(client),
+        cwd,
+        plan_model,
+        build_model,
+        route_model,
+    )
+    .with_iteration_cap(iterations);
+
+    println!("aether agent — plan: build: route (max {iterations} iterations)\n");
+    let result = agent.run(task).await?;
+    println!("plan: {}", result.plan.goal);
+    for step in &result.plan.steps {
+        println!("  {}. {}", step.id, step.action);
+    }
+    println!(
+        "\n[done in {} iterations · {} tool calls]\n",
+        result.iterations, result.tool_calls
+    );
+    println!("{}", result.final_answer);
+    Ok(())
+}
+
 async fn stream_collect(
     client: &OpenAICompatibleClient,
     model: &str,
@@ -390,6 +448,7 @@ async fn stream_collect(
         messages: messages.to_vec(),
         temperature: None,
         stream: true,
+        tools: None,
     };
     let chunks = client.stream_chat(&request).await?;
     futures::pin_mut!(chunks);

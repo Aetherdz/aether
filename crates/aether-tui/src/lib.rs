@@ -249,15 +249,16 @@ impl RatatuiTui {
         let mut history: Vec<ChatMessage> = self
             .chat
             .iter()
-            .map(|r| ChatMessage { role: r.role.clone(), content: r.content.clone() })
+            .map(|r| ChatMessage { role: r.role.clone(), content: r.content.clone(), ..ChatMessage::default() })
             .collect();
-        history.push(ChatMessage { role: "user".to_string(), content: question.clone() });
+        history.push(ChatMessage { role: "user".to_string(), content: question.clone(), ..ChatMessage::default() });
 
         let request = ChatRequest {
             model: model.to_string(),
             messages: history.clone(),
             temperature: None,
             stream: true,
+            tools: None,
         };
 
         let mut reply = String::new();

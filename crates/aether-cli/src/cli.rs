@@ -68,6 +68,26 @@ pub enum Command {
     },
     /// Launch the interactive ratatui terminal UI
     Tui,
+    /// Run the 3-model agent loop (plan -> build -> route) on a task
+    Agent {
+        /// The task to accomplish
+        task: String,
+        /// Provider id
+        #[arg(short, long)]
+        provider: Option<String>,
+        /// Plan model id (defaults to the resolved model)
+        #[arg(long)]
+        plan_model: Option<String>,
+        /// Build model id (defaults to the resolved model)
+        #[arg(long)]
+        build_model: Option<String>,
+        /// Route model id (defaults to the resolved model)
+        #[arg(long)]
+        route_model: Option<String>,
+        /// Max loop iterations before giving up
+        #[arg(short, long, default_value_t = 6)]
+        iterations: u32,
+    },
 }
 
 #[derive(Debug, Subcommand)]
