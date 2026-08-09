@@ -19,7 +19,7 @@ use futures::StreamExt;
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
 };
@@ -69,6 +69,38 @@ impl Tui for NoopTui {
     }
 }
 
+/// Shared visual language: Modern Dark (slate + success-green accent).
+/// RGB values from the ui-ux-pro-max design system for developer tools.
+mod theme {
+    use ratatui::style::{Color, Modifier, Style};
+
+    pub const ACCENT: Color = Color::Rgb(0x22, 0xc5, 0x5e);
+    pub const AI: Color = Color::Rgb(0x81, 0x8c, 0xf8);
+    pub const TITLE: Color = Color::Rgb(0x38, 0xbd, 0xf8);
+    pub const BORDER: Color = Color::Rgb(0x33, 0x41, 0x55);
+    pub const MUTED: Color = Color::Rgb(0x64, 0x74, 0x8b);
+    pub const SELECT_BG: Color = Color::Rgb(0x1e, 0x29, 0x3b);
+
+    pub fn title() -> Style {
+        Style::default().fg(TITLE).add_modifier(Modifier::BOLD)
+    }
+    pub fn accent() -> Style {
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+    }
+    pub fn ai() -> Style {
+        Style::default().fg(AI).add_modifier(Modifier::BOLD)
+    }
+    pub fn muted() -> Style {
+        Style::default().fg(MUTED)
+    }
+    pub fn border() -> Style {
+        Style::default().fg(BORDER)
+    }
+    pub fn highlight() -> Style {
+        Style::default().bg(SELECT_BG).fg(Color::White)
+    }
+}
+
 /// Which screen is visible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -114,6 +146,8 @@ pub struct RatatuiTui {
     output_tokens: u64,
     /// Text being typed in the chat input box.
     input: String,
+    /// Resolved default model; updated when the ctrl+P palette picks one.
+    model: String,
     /// Palette state: available models + the highlighted one.
     palette_models: Vec<String>,
     palette_index: usize,
@@ -137,6 +171,7 @@ impl Default for RatatuiTui {
             input_tokens: 0,
             output_tokens: 0,
             input: String::new(),
+            model: String::new(),
             palette_models: Vec::new(),
             palette_index: 0,
             totals: aether_session::Totals::default(),
@@ -160,6 +195,7 @@ impl RatatuiTui {
     /// Build the UI and load the session list + ledger totals.
     pub fn new() -> Result<Self, TuiError> {
         let mut app = Self::default();
+        app.model = default_model();
         app.refresh_sessions()?;
         Ok(app)
     }
@@ -267,8 +303,10 @@ impl RatatuiTui {
     /// Send one user turn; stream the reply into `self.chat` and persist.
     async fn send_turn(&mut self, question: String, model: &str) -> Result<(), TuiError> {
         let client = Self::client()?;
-        let mut history: Vec<ChatMessage> = self
-            .chat
+        // Context window: the last 40 rows bounds RAM + token spend on long chats.
+        const HISTORY_WINDOW: usize = 40;
+        let start = self.chat.len().saturating_sub(HISTORY_WINDOW);
+        let mut history: Vec<ChatMessage> = self.chat[start..]
             .iter()
             .map(|r| ChatMessage {
                 role: r.role.clone(),
@@ -284,31 +322,34 @@ impl RatatuiTui {
 
         let request = ChatRequest {
             model: model.to_string(),
-            messages: history.clone(),
+            messages: history,
             temperature: None,
             stream: true,
             tools: None,
         };
 
-        let mut reply = String::new();
         let mut usage = None;
         let stream = client
             .stream_chat(&request)
             .await
             .map_err(|e| TuiError::Provider(e.to_string()))?;
         futures::pin_mut!(stream);
+        // Stream straight into the pending buffer: one allocation, no
+        // per-chunk clones (a long reply used to be copied on every chunk).
         self.pending = Some(String::new());
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| TuiError::Provider(e.to_string()))?;
-            if let Some(text) = &chunk.content {
-                reply.push_str(text);
-                self.pending = Some(reply.clone());
-            }
-            if chunk.usage.is_some() {
-                usage = chunk.usage;
+        {
+            let buffer = self.pending.as_mut().expect("pending just set");
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|e| TuiError::Provider(e.to_string()))?;
+                if let Some(text) = &chunk.content {
+                    buffer.push_str(text);
+                }
+                if chunk.usage.is_some() {
+                    usage = chunk.usage;
+                }
             }
         }
-        self.pending = None;
+        let reply = self.pending.take().unwrap_or_default();
 
         if let Some(session) = &self.active {
             session
@@ -440,11 +481,7 @@ impl RatatuiTui {
             }
             KeyCode::Enter if self.pending.is_none() && !self.input.trim().is_empty() => {
                 let question = std::mem::take(&mut self.input);
-                let model = self
-                    .palette_models
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(default_model);
+                let model = self.model.clone();
                 KeyAction::SendTurn { question, model }
             }
             KeyCode::Backspace => {
@@ -486,6 +523,8 @@ impl RatatuiTui {
                 if model.is_empty() {
                     return KeyAction::Continue;
                 }
+                // Remember the pick so the next Enter uses it without reloading config.
+                self.model = model.clone();
                 // Re-ask the last user question against the newly selected model.
                 match self.last_question() {
                     Some(q) => KeyAction::SendTurn {
@@ -560,13 +599,10 @@ impl RatatuiTui {
         ]);
         let [title_area, list_area, footer_area] = vertical.areas(frame.area());
 
-        let title = format!(" aether sessions — {} ", self.sessions.len());
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                title,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                format!(" aether · sessions — {} ", self.sessions.len()),
+                theme::title(),
             ))),
             title_area,
         );
@@ -575,41 +611,46 @@ impl RatatuiTui {
             .sessions
             .iter()
             .map(|s| {
-                let title = s.title.clone().unwrap_or_else(|| "(untitled)".to_string());
+                let title = s.title.as_deref().unwrap_or("(untitled)");
                 let stats = format!(
                     "{} in / {} out · {} msgs",
                     s.stats.input_tokens, s.stats.output_tokens, s.messages
                 );
                 ListItem::new(Line::from(vec![
                     Span::styled(title, Style::default().fg(Color::White)),
-                    Span::raw("  "),
-                    Span::styled(stats, Style::default().fg(Color::DarkGray)),
+                    Span::styled("  ", theme::muted()),
+                    Span::styled(stats, theme::muted()),
                 ]))
             })
             .collect();
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(" sessions "))
-            .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border())
+                    .title(" sessions "),
+            )
+            .highlight_style(theme::highlight())
+            .highlight_symbol("▸ ");
         frame.render_stateful_widget(list, list_area, &mut self.list_state);
 
         let totals = &self.totals;
-        let mut footer = format!(
-            "{} sessions · {} turns · {} in / {} out   —  j/k or wheel: move · Enter: open · d: delete · r: rename · ctrl+P: model · q: quit",
-            totals.sessions, totals.turns, totals.input_tokens, totals.output_tokens
-        );
-        if let Some(err) = &self.last_error {
-            footer.push_str(&format!(
-                "   error: {}",
+        let left = match &self.last_error {
+            Some(err) => format!(
+                "{} sessions · {} turns · {} in / {} out   error: {}",
+                totals.sessions,
+                totals.turns,
+                totals.input_tokens,
+                totals.output_tokens,
                 err.to_string().lines().next().unwrap_or_default()
-            ));
-        }
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                footer,
-                Style::default().fg(Color::DarkGray),
-            ))),
-            footer_area,
-        );
+            ),
+            None => format!(
+                "{} sessions · {} turns · {} in / {} out",
+                totals.sessions, totals.turns, totals.input_tokens, totals.output_tokens
+            ),
+        };
+        let right = "j/k or wheel: move · Enter: open · d: delete · r: rename · ctrl+P: model · q: quit";
+        self.render_footer(frame, footer_area, &left, right);
     }
 
     fn draw_chat(&mut self, frame: &mut Frame) {
@@ -629,9 +670,7 @@ impl RatatuiTui {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 format!(" {title} "),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                theme::title(),
             ))),
             title_area,
         );
@@ -651,79 +690,80 @@ impl RatatuiTui {
             .collect();
         if let Some(tail) = &self.pending {
             rows.push(Line::from(vec![
-                Span::styled(
-                    "ai  ",
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(tail.clone()),
+                Span::styled("ai  ", theme::ai()),
+                Span::raw(tail.as_str()),
             ]));
         }
         let body = Paragraph::new(rows)
-            .block(Block::default().borders(Borders::ALL).title(" transcript "))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border())
+                    .title(" transcript "),
+            )
             .wrap(Wrap { trim: false });
         frame.render_widget(body, body_area);
 
         let input_widget = Paragraph::new(if self.pending.is_some() {
-            Line::from(Span::styled(
-                "streaming…",
-                Style::default().fg(Color::DarkGray),
-            ))
+            Line::from(Span::styled("streaming…", theme::muted()))
         } else {
             Line::from(vec![
-                Span::styled(
-                    "> ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(self.input.clone()),
+                Span::styled("> ", theme::accent()),
+                Span::raw(self.input.as_str()),
             ])
         })
-        .block(Block::default().borders(Borders::ALL).title(" input "));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme::border())
+                .title(" input "),
+        );
         frame.render_widget(input_widget, input_area);
 
         let usage = render::usage_summary(Some(self.input_tokens), Some(self.output_tokens), None);
-        let mut footer_parts = vec![usage];
-        if let Some(err) = &self.last_error {
-            footer_parts.push(format!(
-                "error: {}",
+        let left = match &self.last_error {
+            Some(err) => format!(
+                "{usage}   error: {}",
                 err.to_string().lines().next().unwrap_or_default()
-            ));
+            ),
+            None => usage,
+        };
+        let mut right = String::new();
+        if !self.model.is_empty() {
+            right.push_str("model: ");
+            right.push_str(&self.model);
+            right.push_str("   ");
         }
-        footer_parts.push(
-            "Enter: send · type: message · j/k or wheel: scroll · ctrl+P: model · Esc: back · q: quit"
-                .to_string(),
-        );
-        let footer = footer_parts.join("   ");
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                footer,
-                Style::default().fg(Color::DarkGray),
-            ))),
-            footer_area,
-        );
+        right.push_str("Enter: send · j/k or wheel: scroll · ctrl+P: model · Esc: back · q: quit");
+        self.render_footer(frame, footer_area, &left, &right);
     }
 
-    fn row_to_line(&self, row: &ChatRow) -> Line<'static> {
-        let role = row.role.clone();
-        let content = row.content.clone();
-        let prefix = match role.as_str() {
-            "user" => Span::styled(
-                "you ",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            _ => Span::styled(
-                "ai  ",
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD),
-            ),
+    fn row_to_line<'a>(&self, row: &'a ChatRow) -> Line<'a> {
+        let prefix = match row.role.as_str() {
+            "user" => Span::styled("you  ", theme::accent()),
+            _ => Span::styled("ai   ", theme::ai()),
         };
-        Line::from(vec![prefix, Span::raw(content)])
+        Line::from(vec![prefix, Span::raw(row.content.as_str())])
+    }
+
+    /// Two-part footer: totals on the left, keybindings on the right.
+    fn render_footer(&self, frame: &mut Frame, area: Rect, left: &str, right: &str) {
+        let horizontal = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]);
+        let [left_area, right_area] = horizontal.areas(area);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                left,
+                theme::muted(),
+            ))),
+            left_area,
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                right,
+                theme::muted(),
+            ))),
+            right_area,
+        );
     }
 
     fn draw_palette(&mut self, frame: &mut Frame) {
@@ -737,15 +777,17 @@ impl RatatuiTui {
         let items: Vec<ListItem> = self
             .palette_models
             .iter()
-            .map(|m| ListItem::new(m.clone()))
+            .map(|m| ListItem::new(Line::from(Span::styled(m, Style::default().fg(Color::White)))))
             .collect();
         let list = List::new(items)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_style(theme::border())
                     .title(" ctrl+P — model "),
             )
-            .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+            .highlight_style(theme::highlight())
+            .highlight_symbol("▸ ");
         let mut state = ListState::default();
         state.select(Some(self.palette_index));
         frame.render_widget(list, palette_rect);
@@ -963,6 +1005,29 @@ mod tests {
         };
         let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(action, KeyAction::Continue);
+    }
+
+    #[test]
+    fn palette_pick_persists_model_for_next_send() {
+        let mut app = RatatuiTui {
+            screen: Screen::Palette,
+            chat: vec![ChatRow {
+                role: "user".into(),
+                content: "why?".into(),
+            }],
+            palette_models: vec!["m1".into(), "m2".into()],
+            palette_index: 1,
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.model, "m2");
+        app.screen = Screen::Chat;
+        app.input = "next".into();
+        let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            action,
+            KeyAction::SendTurn { model, .. } if model == "m2"
+        ));
     }
 
     #[test]
