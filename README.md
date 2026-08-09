@@ -39,18 +39,20 @@ No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 
 ### vs. specific tools
 
-| | Aether | Aider | Continue | Claude Code |
-|---|---|---|---|---|
-| **Runtime** | Native Rust binary | Python | Node/VS Code | Node |
-| **Install** | `cargo install` (one binary) | `pip install` | VS Code ext | npm package |
-| **Free default provider** | ✅ built-in `zen` | ❌ needs key (Ollama optional) | ⚠️ local models only | ❌ Anthropic key |
-| **Agent loop w/ tools** | ✅ plan→build→route (3 models) | ✅ | ✅ | ✅ |
-| **Sandboxed tools** | ✅ path-sandboxed, 30 s timeout | ⚠️ per-command confirm | ⚠️ | ⚠️ |
-| **Sessions as plain files** | ✅ JSONL | ⚠️ sqlite | ❌ | ❌ |
-| **Cross-device sync** | ✅ gist/folder line-merge | ❌ | ❌ | ❌ |
-| **MCP server** | ✅ built in (stdio + HTTP) | ❌ (client only) | ✅ client | ✅ client |
-| **Telemetry** | ❌ none, verifiable | ⚠️ opt-in | ⚠️ | ⚠️ |
-| **Local models (Ollama/LM Studio)** | ✅ first-class providers | ✅ | ✅ | ❌ |
+| | Aether | Aider | Continue | Claude Code | opencode | jcode |
+|---|---|---|---|---|---|---|
+| **Runtime** | Native Rust binary | Python | Node/VS Code | Node | TypeScript/Node | Rust binary |
+| **Install** | `cargo install` (one binary) | `pip install` | VS Code ext | npm package | npm/curl | cargo build |
+| **Free default provider** | ✅ built-in `zen` | ❌ needs key (Ollama optional) | ⚠️ local models only | ❌ Anthropic key | ⚠️ needs key/local | ⚠️ needs key/local |
+| **Agent loop w/ tools** | ✅ plan→build→route (3 models) | ✅ | ✅ | ✅ | ✅ | ⚠️ partial |
+| **Sandboxed tools** | ✅ path-sandboxed, 30 s timeout | ⚠️ per-command confirm | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
+| **Diff preview before write** | ✅ built in (y/N gate) | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Undo / checkpoint** | ✅ `.aether-undo` + `aether undo` | ❌ | ❌ | ⚠️ partial | ❌ | ❌ |
+| **Sessions as plain files** | ✅ JSONL | ⚠️ sqlite | ❌ | ❌ | ⚠️ sqlite | ✅ JSONL |
+| **Cross-device sync** | ✅ gist/folder line-merge | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **MCP server** | ✅ built in (stdio + HTTP) | ❌ (client only) | ✅ client | ✅ client | ✅ | ❌ |
+| **Telemetry** | ❌ none, verifiable | ⚠️ opt-in | ⚠️ | ⚠️ | ⚠️ | ❌ |
+| **Local models (Ollama/LM Studio)** | ✅ first-class providers | ✅ | ✅ | ❌ | ✅ | ⚠️ |
 
 > Startup time and RAM figures will be published in a reproducible benchmark
 > (see [benchmark/](benchmark/)) — numbers on this table are architectural
@@ -71,6 +73,23 @@ cargo build --release
 
 > No API key required by default — **zen** is the built-in free provider.
 > Bring your own key anytime: `aether use anthropic/claude-sonnet-5`.
+
+### Offline / local models (first-class)
+
+Aether treats local models as first-class providers — no key, no account,
+no network needed once the model is downloaded:
+
+```sh
+# Ollama (default http://localhost:11434)
+ollama pull llama3.2
+aether use ollama/llama3.2
+
+# LM Studio (default http://localhost:1234/v1)
+aether use lmstudio/local-model
+```
+
+Both connect to any OpenAI-compatible local server and are auto-discovered
+with sensible defaults — the only setup is running the server itself.
 
 ## What it does
 

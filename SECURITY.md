@@ -65,6 +65,7 @@ the working directory itself.
 - a **30-second timeout** (killed on expiry);
 - a **128 KB output cap** (truncated, never streamed unbounded);
 - working directory set to the sandbox root;
+- **no confirmation prompt** — it runs immediately;
 - **no allow-list, no network isolation, no privilege drop**.
 
 This is a deliberate design: the agent loop is only useful if it can build,
@@ -72,13 +73,26 @@ test, and run tools. The cost is that `run_command` can do anything *you*
 can do from that shell. **Treat `aether agent` in a directory as granting
 shell access to that directory.**
 
+**Does `run_command` ask before executing?** No. As of v0.1.0 it executes
+immediately. A per-command confirmation prompt and a dangerous-command
+allow-list (e.g. blocking `rm -rf`, `curl | sh`, `mkfs`) are planned but
+not yet implemented — do not run `aether agent` in a directory you would
+not grant interactive shell access to.
+
+**What about `write_file`?** `write_file` **does** ask: it prints a
+line-diff preview to stderr and requires `y/N` before overwriting, unless
+`--yes` was passed or the confirm gate is disabled (`AETHER_AGENT_CONFIRM=0`).
+On a non-TTY stdin without `--yes`, the write is refused outright.
+
 Mitigations in place and planned:
 
 - [x] timeout + output cap
 - [x] path sandbox for file tools
-- [ ] per-command confirmation prompt before `run_command` (Phase 2)
-- [ ] diff preview before `write_file` (Phase 2)
-- [ ] snapshot/undo before writes (Phase 2)
+- [x] diff preview before `write_file` + y/N confirmation
+- [x] snapshot/undo before writes (`.aether-undo/` + `aether undo`)
+- [x] stagnation detection (stops a looping agent)
+- [ ] per-command confirmation prompt before `run_command`
+- [ ] dangerous-command allow-list / blocklist for `run_command`
 
 ## Secret handling
 
