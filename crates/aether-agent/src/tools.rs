@@ -444,11 +444,21 @@ fn walk(root: &Path, f: &mut dyn FnMut(&Path) -> Result<()>) -> Result<()> {
     Ok(())
 }
 
+/// Build a shell invocation for the current platform.
+/// `/bin/sh -c` on Unix, `cmd /C` on Windows.
+fn platform_shell(cmd: &str) -> std::process::Command {
+    let mut c = std::process::Command::new(if cfg!(windows) { "cmd" } else { "/bin/sh" });
+    if cfg!(windows) {
+        c.arg("/C").arg(cmd);
+    } else {
+        c.arg("-c").arg(cmd);
+    }
+    c
+}
+
 /// Run a shell command with a timeout, capturing capped stdout+stderr.
 fn run_with_timeout(cmd: &str, cwd: &Path, timeout: Duration) -> Result<CommandOutput> {
-    let mut child = std::process::Command::new("/bin/sh")
-        .arg("-c")
-        .arg(cmd)
+    let mut child = platform_shell(cmd)
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -641,7 +651,7 @@ mod tests {
         assert!(res.text.contains("hi"));
         assert!(res.text.contains("[exit 0]"));
         let res = tools
-            .call("run_command", &serde_json::json!({"cmd": "false"}))
+            .call("run_command", &serde_json::json!({"cmd": "exit 1"}))
             .unwrap();
         assert!(res.text.contains("[exit 1]"));
         let _ = std::fs::remove_dir_all(&root);
@@ -660,7 +670,7 @@ mod tests {
                 &serde_json::json!({"needle": "aether_run", "path": ""}),
             )
             .unwrap();
-        assert!(res.text.contains("src/main.rs:1"));
+        assert!(res.text.contains("main.rs:1"));
         let res = tools
             .call("search", &serde_json::json!({"needle": "zzz", "path": ""}))
             .unwrap();
