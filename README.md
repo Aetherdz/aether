@@ -56,6 +56,7 @@ cargo build --release
 | Command | Description |
 |---|---|
 | `aether ask "…"` | One-shot question, streams the answer |
+| `aether agent "task"` | 3-model agent loop: plan → build → route with tools |
 | `aether chat` | Interactive REPL chat |
 | `aether use provider/model` | Set default provider and model |
 | `aether models [--live]` | List models (zen fetches live) |
@@ -79,6 +80,34 @@ fingerprint; a conflict is resolved by keeping the newer origin and
 flagging the older one for review.
 ```
 
+### The agent loop
+
+`aether agent "task"` runs the loop that makes Aether a *coding agent*:
+three models cooperate on one task, each with its own role:
+
+1. **plan** — a planner reads the task and writes a step-by-step plan.
+2. **build** — a builder executes the plan using real tools: `read_file`,
+   `write_file`, `list_dir`, `run_command`, `search`. Every path is sandboxed
+   to the working directory — absolute paths, `..` escapes and NUL bytes are
+   rejected before anything touches disk.
+3. **route** — a router watches the result and decides: keep going, revise
+   the plan, or declare it done.
+
+The loop runs until the router says **done** or the iteration cap is hit.
+
+```sh
+# Every role defaults to your configured model; override any of them.
+aether agent "add a --dry-run flag to the sync command" \
+  --plan-model zen/llama-3.3-70b \
+  --build-model anthropic/claude-sonnet-5 \
+  --route-model openai/gpt-5 \
+  --iterations 8
+```
+
+Tool calls work two ways: native `tool_calls` when the provider supports
+them, and a fenced-JSON fallback (`{"tool": "...", "args": {...}}` in the
+reply) otherwise — so the loop runs on any OpenAI-compatible endpoint.
+
 ### The TUI
 
 `aether tui` launches a ratatui interface: session list + chat on the left,
@@ -101,7 +130,8 @@ with origin fingerprints — concurrent edits never silently overwrite.
 | Crate | Role |
 |---|---|
 | `aether-core` | config, errors, fs helpers |
-| `aether-provider` | 19-provider registry, graceful fallbacks, SSE client |
+| `aether-provider` | 19-provider registry, graceful fallbacks, SSE client, tool-calling types |
+| `aether-agent` | the 3-model loop: plan, build (sandboxed tools), route |
 | `aether-session` | JSONL sessions, auto-title, recall, usage ledger |
 | `aether-sync` | gist/folder backends, line-level merge |
 | `aether-mcp` | MCP server (stdio + Streamable HTTP) |
@@ -112,7 +142,8 @@ with origin fingerprints — concurrent edits never silently overwrite.
 aether/
   crates/
     aether-core/      # config, error, fs, prompt
-    aether-provider/  # client, registry, model, provider
+    aether-provider/  # client, registry, model, provider, tool-calling
+    aether-agent/     # plan/build/route loop + sandboxed tool registry
     aether-session/   # JSONL store, recall, ledger
     aether-sync/      # gist + folder backends, line merge
     aether-mcp/       # MCP stdio + Streamable HTTP server
@@ -137,6 +168,7 @@ Requirements: **Rust 1.97+** (edition 2024), a C toolchain for linking.
 Phase 0–4 complete — the binary works end to end:
 
 - [x] `ask` / `chat` — one-shot streaming + interactive REPL
+- [x] `agent` — 3-model loop (plan → build → route) with sandboxed tools
 - [x] `use` / `models` / `providers` — provider management, graceful zen fallback
 - [x] `sessions` — JSONL store, auto-title, recall search, usage ledger
 - [x] `recall` — keyword search across past sessions
