@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>aetherdz — Rust terminal AI agent</title>
+<meta name="description" content="aetherdz is a Rust terminal AI agent: a TUI chat over your codebase with an MCP server and gist/folder sync. Keyboard-first, token-ledgered, zero Node runtime.">
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link rel="preload" href="/fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/jetbrains-mono-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav" id="top">
+  <nav aria-label="Primary">
+    <a class="brand" href="#top" aria-label="aetherdz home">
+      <svg class="brand-mark" viewBox="0 0 64 64" width="28" height="28" aria-hidden="true">
+        <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14" fill="#0A0A0A" stroke="#2A2A2A" stroke-width="1.5"/>
+        <path d="M 17 51 L 32 13.5 L 47 51" fill="none" stroke="#F2F1F0" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="24" y="29.5" width="16" height="7" rx="3.5" fill="#FF9F0A"/>
+      </svg>
+      <span class="brand-name">aether<span class="brand-accent">dz</span></span>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#terminal">Demo</a>
+      <a href="https://github.com/Aetherdz/aetherdz" rel="noopener">GitHub</a>
+      <a class="nav-cta" href="#install">Install</a>
+    </div>
+  </nav>
+</header>
+
+<main id="main">
+
+  <section class="hero" aria-labelledby="hero-title">
+    <p class="overline">aetherdz · rust · terminal · ai</p>
+    <h1 id="hero-title">Talk to your codebase.<br>From the terminal.</h1>
+    <p class="lead">aetherdz is a keyboard-first AI agent that lives in your shell. A TUI chat over your code, an MCP server for your tools, and gist or folder sync — in one native Rust binary. No Node runtime. No browser tab. No noise.</p>
+    <div class="install" id="install">
+      <div class="install-row">
+        <code class="install-code" id="install-code">cargo install aetherdz</code>
+        <button class="copy-btn" id="copy-btn" type="button" aria-label="Copy install command">
+          <svg class="icon icon-copy" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 5V3.5a1 1 0 0 0-1-1H3.5a1 1 0 0 0-1 1V10a1 1 0 0 0 1 1H5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          <svg class="icon icon-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <p class="install-meta" aria-live="polite">crates: aetherdz-tui · aetherdz-mcp · aetherdz-sync — MIT license</p>
+    </div>
+    <ul class="badges" aria-label="Highlights">
+      <li>100% Rust</li>
+      <li>No Node runtime</li>
+      <li>Token ledger</li>
+      <li>MCP ready</li>
+    </ul>
+  </section>
+
+  <section class="terminal-wrap" id="terminal" aria-labelledby="terminal-title">
+    <h2 id="terminal-title" class="sr-only">Terminal demo</h2>
+    <figure class="terminal">
+      <div class="terminal-bar">
+        <span class="dot dot-red" aria-hidden="true"></span>
+        <span class="dot dot-yellow" aria-hidden="true"></span>
+        <span class="dot dot-green" aria-hidden="true"></span>
+        <span class="terminal-path">~/code/aetherdz</span>
+      </div>
+      <pre class="terminal-body" tabindex="0"><span class="t-dim"># start a session over your repo</span>
+<span class="t-prompt">$</span> aetherdz
+<span class="t-dim">▸ loading index · 1,284 symbols · 96 files</span>
+
+<span class="t-prompt">$</span> what is the sync line-merge strategy?
+<span class="t-dim">▸ aetherdz</span> scanning aetherdz-sync …
+
+<span class="t-sys">aetherdz</span> <span class="t-plain">The sync crate merges lines, not files. Each block
+carries an origin fingerprint; a conflict is resolved by
+keeping the newer origin and flagging the older one for
+review — so concurrent edits never silently overwrite.</span>
+
+<span class="t-prompt">$</span> <span class="t-cursor">▊</span></pre>
+    </figure>
+  </section>
+
+  <section class="features" id="features" aria-labelledby="features-title">
+    <p class="overline">capabilities</p>
+    <h2 class="section-title" id="features-title">Everything a terminal agent needs</h2>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <p class="feature-label">tui</p>
+        <h3>Session list + chat</h3>
+        <p>A ratatui interface with a Ctrl+P palette, wheel scroll, and a live token ledger. Pick a past session or start fresh — all from the keyboard.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">mcp</p>
+        <h3>MCP server</h3>
+        <p>Speaks Model Context Protocol over stdio and streamable-HTTP. Your editor, your agents, and aetherdz share one context layer.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">sync</p>
+        <h3>Gist or folder sync</h3>
+        <p>Sessions sync to GitHub gists or a local folder, merged line-by-line with origin fingerprints — no silent overwrites on concurrent edits.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">native</p>
+        <h3>One Rust binary</h3>
+        <p>No Node runtime, no bundled Electron, no 400 MB install. Compiled, typed, and fast — the way a terminal tool should be.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">tokens</p>
+        <h3>Token ledger</h3>
+        <p>Every request is counted. You always know what a session cost before you commit to it — no mystery usage bills.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">open</p>
+        <h3>MIT licensed</h3>
+        <p>Public, auditable, and free. Fork it, vendor it, build on it — the crate boundary is the contract.</p>
+      </article>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="#top" aria-label="aetherdz home">
+        <svg class="brand-mark" viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
+          <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14" fill="#0A0A0A" stroke="#2A2A2A" stroke-width="1.5"/>
+          <path d="M 17 51 L 32 13.5 L 47 51" fill="none" stroke="#F2F1F0" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="24" y="29.5" width="16" height="7" rx="3.5" fill="#FF9F0A"/>
+        </svg>
+        <span class="brand-name">aether<span class="brand-accent">dz</span></span>
+      </a>
+      <p class="footer-tagline">A Rust terminal AI agent. Built in the open, for the shell.</p>
+    </div>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="#features">Features</a>
+      <a href="#terminal">Demo</a>
+      <a href="#install">Install</a>
+    </nav>
+    <div class="footer-links" aria-label="External">
+      <a href="https://github.com/Aetherdz/aetherdz" rel="noopener">GitHub</a>
+      <a href="https://github.com/Aetherdz/aetherdz/blob/main/LICENSE" rel="noopener">License</a>
+    </div>
+  </div>
+  <p class="footer-status">built with rust · aetherdz © 2026</p>
+</footer>
+
+<script>
+(function () {
+  var btn = document.getElementById('copy-btn');
+  var code = document.getElementById('install-code');
+  var text = 'cargo install aetherdz';
+  var row = btn.closest('.install-row');
+  btn.addEventListener('click', function () {
+    function done() {
+      row.classList.add('copied');
+      btn.setAttribute('aria-label', 'Copied');
+      setTimeout(function () {
+        row.classList.remove('copied');
+        btn.setAttribute('aria-label', 'Copy install command');
+      }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  });
+})();
+</script>
+</body>
+</html>
