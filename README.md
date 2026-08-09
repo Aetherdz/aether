@@ -17,15 +17,6 @@
 
 ---
 
-```
-  █████╗ ███████╗████████╗██╗  ██╗███████╗██████╗ ██████╗ ███████╗
- ██╔══██╗██╔════╝╚══██╔══╝██║  ██║██╔════╝██╔══██╗██╔══██╗╚══███╔╝
- ███████║█████╗     ██║   ███████║█████╗  ██████╔╝██║  ██║  ███╔╝
- ██╔══██║██╔══╝     ██║   ██╔══██║██╔══╝  ██╔══██╗██║  ██║ ███╔╝
- ██║  ██║███████╗   ██║   ██║  ██║███████╗██║  ██║██████╔╝███████╗
- ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝
-```
-
 Aetherdz is a **Rust port of [AETHER](https://github.com/Aetherdz/aethercode)** — the
 same UX, the same providers, the same session format, but compiled to a single
 static binary that talks to any OpenAI-compatible API. It started as a migration
