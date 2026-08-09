@@ -17,17 +17,18 @@
   <nav aria-label="Primary">
     <a class="brand" href="#top" aria-label="aetherdz home">
       <svg class="brand-mark" viewBox="0 0 64 64" width="28" height="28" aria-hidden="true">
-        <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14" fill="#0A0A0A" stroke="#2A2A2A" stroke-width="1.5"/>
+        <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14" fill="#111111" stroke="#111111" stroke-width="1.5"/>
         <path d="M 17 51 L 32 13.5 L 47 51" fill="none" stroke="#F2F1F0" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect x="24" y="29.5" width="16" height="7" rx="3.5" fill="#FF9F0A"/>
+        <rect x="24" y="29.5" width="16" height="7" rx="3.5" fill="#FFFFFF"/>
       </svg>
       <span class="brand-name">aether<span class="brand-accent">dz</span></span>
     </a>
     <div class="nav-links">
+      <a href="#quickstart">Install</a>
       <a href="#features">Features</a>
       <a href="#terminal">Demo</a>
       <a href="https://github.com/Aetherdz/aetherdz" rel="noopener">GitHub</a>
-      <a class="nav-cta" href="#install">Install</a>
+      <a class="nav-cta" href="#install">Get started</a>
     </div>
   </nav>
 </header>
@@ -81,6 +82,41 @@ review — so concurrent edits never silently overwrite.</span>
     </figure>
   </section>
 
+  <section class="quickstart" id="quickstart" aria-labelledby="quickstart-title">
+    <p class="overline">quick start</p>
+    <h2 class="section-title" id="quickstart-title">Install &amp; run in three steps</h2>
+    <div class="steps">
+      <article class="step">
+        <div class="step-head">
+          <span class="step-num">01</span>
+          <h3 class="step-title">Clone &amp; build</h3>
+        </div>
+        <p>One native Rust binary. No Node runtime, no browser tab.</p>
+        <code class="step-code"><span class="c-comment"># requires Rust 1.97+</span>
+<span class="c-cmd">$</span> git clone https://github.com/Aetherdz/aetherdz
+<span class="c-cmd">$</span> cd aetherdz &amp;&amp; cargo build --release</code>
+      </article>
+      <article class="step">
+        <div class="step-head">
+          <span class="step-num">02</span>
+          <h3 class="step-title">Run the binary</h3>
+        </div>
+        <p>The free zen provider works out of the box — no API key needed.</p>
+        <code class="step-code"><span class="c-comment"># ask a one-shot question</span>
+<span class="c-cmd">$</span> ./target/release/aether ask "explain this repo"</code>
+      </article>
+      <article class="step">
+        <div class="step-head">
+          <span class="step-num">03</span>
+          <h3 class="step-title">Or open the TUI</h3>
+        </div>
+        <p>Interactive chat with Ctrl+P model palette and a live token ledger.</p>
+        <code class="step-code"><span class="c-comment"># full terminal UI</span>
+<span class="c-cmd">$</span> ./target/release/aether tui</code>
+      </article>
+    </div>
+  </section>
+
   <section class="features" id="features" aria-labelledby="features-title">
     <p class="overline">capabilities</p>
     <h2 class="section-title" id="features-title">Everything a terminal agent needs</h2>
@@ -125,9 +161,9 @@ review — so concurrent edits never silently overwrite.</span>
     <div class="footer-brand">
       <a class="brand" href="#top" aria-label="aetherdz home">
         <svg class="brand-mark" viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
-          <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14" fill="#0A0A0A" stroke="#2A2A2A" stroke-width="1.5"/>
+          <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14" fill="#111111" stroke="#111111" stroke-width="1.5"/>
           <path d="M 17 51 L 32 13.5 L 47 51" fill="none" stroke="#F2F1F0" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <rect x="24" y="29.5" width="16" height="7" rx="3.5" fill="#FF9F0A"/>
+          <rect x="24" y="29.5" width="16" height="7" rx="3.5" fill="#FFFFFF"/>
         </svg>
         <span class="brand-name">aether<span class="brand-accent">dz</span></span>
       </a>
