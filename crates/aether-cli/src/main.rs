@@ -1,11 +1,16 @@
 //! aether — A cross-platform terminal AI coding agent.
 //!
-//! Phase 0 ships exactly five commands:
+//! Command surface (6 root commands):
 //! - `aether ask "..."`        one-shot streaming answer
 //! - `aether chat`             interactive REPL
-//! - `aether use provider[/model]`  set defaults
-//! - `aether models [--live]`  list models
-//! - `aether providers`        list providers with key status
+//! - `aether agent "task"`     run the 3-model agent loop
+//! - `aether agent undo [f]`   list/restore write snapshots
+//! - `aether provider ...`     list / models / use (set defaults)
+//! - `aether session ...`      list / show / delete / rename / resume / search / sync
+//! - `aether tui`              launch the terminal UI
+//!
+//! Legacy names (`use`, `models`, `providers`, `sessions`, `recall`, `sync`,
+//! `undo`) still parse but print a one-line deprecation notice.
 
 mod cli;
 
@@ -23,7 +28,7 @@ use clap::Parser;
 use futures::StreamExt;
 
 use aether_sync::Backend;
-use cli::{Cli, Command, SessionsAction, SyncAction};
+use cli::{AgentAction, Cli, Command, ProviderAction, SessionAction, SessionsAction, SyncAction};
 
 const MODEL_SEPARATOR: &str = "────────────────────────────────────────";
 
@@ -37,14 +42,8 @@ async fn main() -> Result<()> {
             model,
         } => cmd_ask(&question, provider.as_deref(), model.as_deref()).await,
         Command::Chat { provider, model } => cmd_chat(provider.as_deref(), model.as_deref()).await,
-        Command::Use { spec } => cmd_use(&spec),
-        Command::Models { provider, live } => cmd_models(provider.as_deref(), live).await,
-        Command::Providers => cmd_providers(),
-        Command::Sessions { action } => cmd_sessions(action).await,
-        Command::Recall { phrase } => cmd_recall(&phrase),
-        Command::Sync { action } => cmd_sync(action).await,
-        Command::Tui => cmd_tui(),
         Command::Agent {
+            action,
             task,
             provider,
             plan_model,
@@ -52,19 +51,91 @@ async fn main() -> Result<()> {
             route_model,
             iterations,
             yes,
-        } => {
-            cmd_agent(
-                &task,
-                provider.as_deref(),
-                plan_model.as_deref(),
-                build_model.as_deref(),
-                route_model.as_deref(),
-                iterations,
-                yes,
-            )
-            .await
+        } => match action {
+            Some(AgentAction::Undo { file }) => cmd_undo(file.as_deref()),
+            None => {
+                let task = task.ok_or_else(|| {
+                    Error::InvalidInput(
+                        "`aether agent` needs a task or a subcommand (try `aether agent undo`)"
+                            .into(),
+                    )
+                })?;
+                cmd_agent(
+                    &task,
+                    provider.as_deref(),
+                    plan_model.as_deref(),
+                    build_model.as_deref(),
+                    route_model.as_deref(),
+                    iterations,
+                    yes,
+                )
+                .await
+            }
+        },
+        Command::Tui => cmd_tui(),
+        Command::Provider { action } => cmd_provider(action).await,
+        Command::Session { action } => cmd_session(action).await,
+        Command::Use { spec } => {
+            deprecate("use", "provider use");
+            cmd_use(&spec)
         }
-        Command::Undo { file } => cmd_undo(file.as_deref()),
+        Command::Models { provider, live } => {
+            deprecate("models", "provider models");
+            cmd_models(provider.as_deref(), live).await
+        }
+        Command::Providers => {
+            deprecate("providers", "provider list");
+            cmd_providers()
+        }
+        Command::Sessions { action } => {
+            deprecate("sessions", "session");
+            cmd_sessions(action).await
+        }
+        Command::Recall { phrase } => {
+            deprecate("recall", "session search");
+            cmd_recall(&phrase)
+        }
+        Command::Sync { action } => {
+            deprecate("sync", "session sync");
+            cmd_sync(action).await
+        }
+        Command::Undo { file } => {
+            deprecate("undo", "agent undo");
+            cmd_undo(file.as_deref())
+        }
+    }
+}
+
+/// Print a one-line deprecation notice for a renamed command.
+fn deprecate(old: &str, new: &str) {
+    eprintln!(
+        "note: `aether {old}` is deprecated; use `aether {new}` instead"
+    );
+}
+
+/// `aether provider <list|models|use>` — provider management.
+async fn cmd_provider(action: ProviderAction) -> Result<()> {
+    match action {
+        ProviderAction::List => cmd_providers(),
+        ProviderAction::Models { provider, live } => {
+            cmd_models(provider.as_deref(), live).await
+        }
+        ProviderAction::Use { spec } => cmd_use(&spec),
+    }
+}
+
+/// `aether session <list|show|delete|rename|resume|search|sync>` — session management.
+async fn cmd_session(action: SessionAction) -> Result<()> {
+    match action {
+        SessionAction::List => cmd_sessions(SessionsAction::List).await,
+        SessionAction::Show { id } => cmd_sessions(SessionsAction::Show { id }).await,
+        SessionAction::Delete { id } => cmd_sessions(SessionsAction::Delete { id }).await,
+        SessionAction::Rename { id, title } => {
+            cmd_sessions(SessionsAction::Rename { id, title }).await
+        }
+        SessionAction::Resume { id } => cmd_sessions(SessionsAction::Resume { id }).await,
+        SessionAction::Search { phrase } => cmd_recall(&phrase),
+        SessionAction::Sync { action } => cmd_sync(action).await,
     }
 }
 

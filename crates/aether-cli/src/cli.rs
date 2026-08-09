@@ -1,5 +1,7 @@
-//! clap derive CLI surface. Phase 0 ships exactly five commands:
-//! `ask`, `chat`, `use`, `models`, `providers`.
+//! clap derive CLI surface. Six root commands:
+//! `ask`, `chat`, `agent`, `tui`, `provider`, `session`.
+//! Legacy command names (`use`, `models`, `providers`, `sessions`, `recall`,
+//! `sync`, `undo`) still parse but are hidden and print a deprecation notice.
 
 use clap::{Parser, Subcommand};
 
@@ -36,42 +38,14 @@ pub enum Command {
         #[arg(short, long)]
         model: Option<String>,
     },
-    /// Set the default provider and/or model (e.g. aether use zen/claude-sonnet-5)
-    Use {
-        /// Provider spec: `provider` or `provider/model`
-        spec: String,
-    },
-    /// List models for a provider (default provider if omitted; zen fetches live)
-    Models {
-        /// Provider id
-        provider: Option<String>,
-        /// Force a live fetch from the zen models endpoint
-        #[arg(short, long)]
-        live: bool,
-    },
-    /// List all providers with key status
-    Providers,
-    /// List, show, resume, rename or delete sessions
-    Sessions {
-        #[command(subcommand)]
-        action: SessionsAction,
-    },
-    /// Search past sessions by keyword
-    Recall {
-        /// The phrase to search for
-        phrase: String,
-    },
-    /// Sync sessions across devices (gist or folder backend)
-    Sync {
-        #[command(subcommand)]
-        action: SyncAction,
-    },
-    /// Launch the interactive ratatui terminal UI
-    Tui,
     /// Run the 3-model agent loop (plan -> build -> route) on a task
+    #[command(subcommand_precedence_over_arg = true)]
     Agent {
+        /// Agent subcommand (e.g. undo); otherwise the task is positional
+        #[command(subcommand)]
+        action: Option<AgentAction>,
         /// The task to accomplish
-        task: String,
+        task: Option<String>,
         /// Provider id
         #[arg(short, long)]
         provider: Option<String>,
@@ -91,10 +65,125 @@ pub enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// Launch the interactive ratatui terminal UI
+    Tui,
+    /// Manage providers: list, models, use (set default)
+    Provider {
+        #[command(subcommand)]
+        action: ProviderAction,
+    },
+    /// List, show, resume, rename, delete or search sessions (sync via subcommand)
+    Session {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+    /// Set the default provider and/or model (e.g. aether use zen/claude-sonnet-5)
+    #[command(hide = true)]
+    Use {
+        /// Provider spec: `provider` or `provider/model`
+        spec: String,
+    },
+    /// List models for a provider (default provider if omitted; zen fetches live)
+    #[command(hide = true)]
+    Models {
+        /// Provider id
+        provider: Option<String>,
+        /// Force a live fetch from the zen models endpoint
+        #[arg(short, long)]
+        live: bool,
+    },
+    /// List all providers with key status
+    #[command(hide = true)]
+    Providers,
+    /// List, show, resume, rename or delete sessions
+    #[command(hide = true)]
+    Sessions {
+        #[command(subcommand)]
+        action: SessionsAction,
+    },
+    /// Search past sessions by keyword
+    #[command(hide = true)]
+    Recall {
+        /// The phrase to search for
+        phrase: String,
+    },
+    /// Sync sessions across devices (gist or folder backend)
+    #[command(hide = true)]
+    Sync {
+        #[command(subcommand)]
+        action: SyncAction,
+    },
+    /// List or restore write snapshots saved by the agent under .aether-undo/
+    #[command(hide = true)]
+    Undo {
+        /// Restore this relative file to its most recent snapshot (omit to list)
+        file: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentAction {
     /// List or restore write snapshots saved by the agent under .aether-undo/
     Undo {
         /// Restore this relative file to its most recent snapshot (omit to list)
         file: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProviderAction {
+    /// List all providers with key status
+    List,
+    /// List models for a provider (default provider if omitted; zen fetches live)
+    Models {
+        /// Provider id
+        provider: Option<String>,
+        /// Force a live fetch from the zen models endpoint
+        #[arg(short, long)]
+        live: bool,
+    },
+    /// Set the default provider and/or model (e.g. aether provider use zen/claude-sonnet-5)
+    Use {
+        /// Provider spec: `provider` or `provider/model`
+        spec: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionAction {
+    /// List all sessions (newest first)
+    List,
+    /// Show the full transcript of a session
+    Show {
+        /// Session id
+        id: String,
+    },
+    /// Delete a session and its title
+    Delete {
+        /// Session id
+        id: String,
+    },
+    /// Rename a session
+    Rename {
+        /// Session id
+        id: String,
+        /// New title
+        title: String,
+    },
+    /// Resume a session in the interactive chat
+    Resume {
+        /// Session id
+        id: String,
+    },
+    /// Search past sessions by keyword
+    Search {
+        /// The phrase to search for
+        phrase: String,
+    },
+    /// Sync sessions across devices (gist or folder backend)
+    Sync {
+        #[command(subcommand)]
+        action: SyncAction,
     },
 }
 
@@ -144,4 +233,76 @@ pub enum SyncAction {
     Pull,
     /// Show the current sync state and token presence
     Status,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> Command {
+        Cli::try_parse_from(std::iter::once("aether").chain(args.iter().copied()))
+            .expect("args should parse")
+            .command
+    }
+
+    #[test]
+    fn new_surface_parses() {
+        assert!(matches!(parse(&["ask", "hi"]), Command::Ask { .. }));
+        assert!(matches!(parse(&["chat"]), Command::Chat { .. }));
+        assert!(matches!(parse(&["tui"]), Command::Tui));
+        assert!(matches!(
+            parse(&["provider", "list"]),
+            Command::Provider { .. }
+        ));
+        assert!(matches!(
+            parse(&["session", "list"]),
+            Command::Session { .. }
+        ));
+    }
+
+    #[test]
+    fn agent_task_and_undo_both_parse() {
+        match parse(&["agent", "fix the bug"]) {
+            Command::Agent {
+                task: Some(t), action: None, ..
+            } => assert_eq!(t, "fix the bug"),
+            other => panic!("expected Agent with task, got {other:?}"),
+        }
+        match parse(&["agent", "undo", "src/main.rs"]) {
+            Command::Agent {
+                task: None,
+                action: Some(AgentAction::Undo { file }),
+                ..
+            } => assert_eq!(file.as_deref(), Some("src/main.rs")),
+            other => panic!("expected Agent undo, got {other:?}"),
+        }
+        // Bare `agent` with no task and no subcommand parses (handled in main).
+        assert!(matches!(parse(&["agent"]), Command::Agent { .. }));
+    }
+
+    #[test]
+    fn deprecated_aliases_still_resolve() {
+        assert!(matches!(parse(&["use", "zen"]), Command::Use { .. }));
+        assert!(matches!(
+            parse(&["models", "zen"]),
+            Command::Models { .. }
+        ));
+        assert!(matches!(parse(&["providers"]), Command::Providers));
+        assert!(matches!(parse(&["recall", "auth"]), Command::Recall { .. }));
+        assert!(matches!(parse(&["undo", "file.rs"]), Command::Undo { .. }));
+        assert!(matches!(parse(&["sync", "status"]), Command::Sync { .. }));
+    }
+
+    #[test]
+    fn deprecated_sessions_actions_map_one_to_one() {
+        assert!(matches!(
+            parse(&["sessions", "list"]),
+            Command::Sessions { .. }
+        ));
+        assert!(matches!(
+            parse(&["sessions", "show", "abc"]),
+            Command::Sessions { .. }
+        ));
+    }
 }

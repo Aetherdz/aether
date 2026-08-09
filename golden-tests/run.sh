@@ -14,11 +14,11 @@ fi
 
 # ---- phase gate -----------------------------------------------------------
 # The fixtures were captured from the OLD full Node/TS CLI (22 commands,
-# table output). The Rust CLI currently ships ask/chat/use/models/providers
-# (+ sessions/recall in Phase 1) with FLAT output, so full-diff checks would
-# fail by design. Active checks are therefore SHAPE-based; anything that
-# expects the TS surface (22 commands, box-drawing tables) is phase-gated to
-# SKIP, not fail. Fixtures are left untouched.
+# table output). The Rust CLI ships 6 root commands (ask/chat/agent/tui/
+# provider/session) with FLAT output, so full-diff checks would fail by
+# design. Active checks are therefore SHAPE-based; anything that expects the
+# TS surface (22 commands, box-drawing tables) is phase-gated to SKIP, not
+# fail. Fixtures are left untouched.
 #
 # Format:  name|mode|args...|expect
 #   mode=shape  run "$AETHER_BIN" $args and assert on output shape
@@ -26,11 +26,11 @@ fi
 #               once fixtures are re-captured from the Rust CLI)
 #   mode=skip   phase-gated: never runs, prints SKIP, never fails
 PHASE_CHECKS=(
-  "aether-help|shape|--help|commands:ask chat use models providers"
-  "providers|shape|providers|providers:19"
-  "models-zen|shape|models zen|nonempty-flat"
+  "aether-help|shape|--help|commands:ask chat agent tui provider session"
+  "providers|shape|provider list|providers:19"
+  "models-zen|shape|provider models zen|nonempty-flat"
+  "sessions-list|shape|session list|sessions-list"
   "sync-status|skip|--|sync is a TS-only command; absent from Rust Phase 0+1 surface"
-  "sessions-list-empty|skip|--|fixture is TS table format; Rust sessions output not yet shape-matched"
 )
 
 FIX="golden-tests/fixtures"
@@ -73,6 +73,9 @@ shape_ok() {
       ;;
     nonempty-flat)
       [ -n "$out" ] && ! grep -q '[┌│└]' <<<"$out"
+      ;;
+    sessions-list)
+      grep -q 'no sessions yet' <<<"$out" || grep -q ' msgs ' <<<"$out"
       ;;
     *) return 1 ;;
   esac
