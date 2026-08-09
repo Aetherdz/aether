@@ -2,42 +2,45 @@
 
 ## 0. Research Log
 
-- Embedded refs: shortlisted [opencode.ai, jcode.sh, aether-site] → picked [opencode.ai (Layer A — dark terminal aesthetic)] + [jcode.sh (Layer B — mono monochrome minimal)] because the product is a Rust terminal AI agent (like jcode.sh's Rust heritage) with a modern dark IDE identity (like opencode.ai's). Combined: dark base + mono type + orange accent + hairline borders.
+- Embedded refs: shortlisted [opencode.ai, jcode.sh, aether-site] → picked [jcode.sh (Layer A — monochrome mono minimal)] + [opencode.ai (Layer B — terminal composition, macOS window chrome)] because the product is a Rust terminal AI agent; user directed a **black & white** (monochrome light) treatment after the first dark pass.
 - Lazyweb: 0 queries (refs provided directly by user, live-fetched).
 - Imagen drafts: none — logo designed by hand as original SVG mark.
-- Skipped lanes: ui-ux-db CLI — palette is dictated by the two named references; no additional search needed.
+- Skipped lanes: ui-ux-db CLI — palette dictated by the two named references plus explicit user direction to black & white.
 
 ## 1. Atmosphere & Identity
 
 A quiet command center. Dense when needed, spacious when not.
 The signature is **terminal honesty** — the page reads like an editor buffer:
-monospace everywhere, hairlines instead of shadows, and a single ember of
-orange (the Aether glow) that appears only where the user can act.
+monospace everywhere, hairlines instead of shadows, and **no color at all**:
+pure black ink on white paper, with grays doing the hierarchy work.
 It feels like a good terminal emulator: fast, monochrome, exact.
+The logo is the only dark object — a black tile with a blinking white cursor —
+so the mark itself becomes the page's single point of contrast.
 
 ## 2. Color
 
 ### Palette
 
-| Role | Token | Light | Dark | Usage |
-|------|-------|-------|------|-------|
-| Surface/primary | --surface-primary | #FFFFFF | #090909 | Main background |
-| Surface/secondary | --surface-secondary | #F4F4F4 | #111111 | Cards, panels |
-| Surface/elevated | --surface-elevated | #FFFFFF | #1A1A1A | Terminal window, popovers |
-| Text/primary | --text-primary | #111111 | #F2F1F0 | Headlines, body |
-| Text/secondary | --text-secondary | #666666 | #9C9C9C | Captions, hints |
-| Text/tertiary | --text-tertiary | #999999 | #666666 | Disabled, muted |
-| Border/default | --border-default | #CCCCCC | #2A2A2A | Dividers, outlines |
-| Border/subtle | --border-subtle | #E5E5E5 | #1E1E1E | Soft separations |
-| Accent/primary | --accent-primary | #FF9F0A | #FF9F0A | CTAs, links, focus, logo glow |
-| Accent/hover | --accent-hover | #E88E00 | #FFB340 | Hover state |
-| Status/success | --status-success | #16A34A | #30D158 | Confirmations, prompt $ |
-| Status/error | --status-error | #DC2626 | #FF453A | Errors, terminal dots |
+| Role | Token | Value | Usage |
+|------|-------|-------|-------|
+| Surface/primary | --surface-primary | #FFFFFF | Main background |
+| Surface/secondary | --surface-secondary | #F4F4F4 | Cards, panels, terminal body |
+| Surface/elevated | --surface-elevated | #FFFFFF | Terminal title bar, code blocks |
+| Text/primary | --text-primary | #111111 | Headlines, body, cursor, accent |
+| Text/secondary | --text-secondary | #666666 | Captions, hints, lead |
+| Text/tertiary | --text-tertiary | #999999 | Disabled, muted, path, dim |
+| Border/default | --border-default | #CCCCCC | Cards, dividers, code blocks |
+| Border/subtle | --border-subtle | #E5E5E5 | Soft separations |
+| Accent/primary | --accent-primary | #111111 | Ink — interactive elements ARE the text color (black & white) |
+| Accent/hover | --accent-hover | #000000 | Hover state |
+| Status/success | --status-success | #111111 | Confirmations (copied state) — ink, not green |
+| Status/error | --status-error | #666666 | Errors — gray, not red |
 
 ### Rules
-- Surface hierarchy creates depth without shadows. Depth = tonal shift only.
-- Accent (orange #FF9F0A) is used ONLY for interactive elements, the logo mark, and status cursors. Never decorative backgrounds.
-- Terminal window dots (red #FF453A / yellow #FF9F0A / green #30D158) are the one decorative exception — inherited from macOS window chrome in the reference.
+- **Black & white is the constraint.** No chromatic color anywhere in the UI. The palette is ink (#111), paper (#FFF), and three grays.
+- Accent = ink. Interactive elements are distinguished by weight, borders, and hover, never by hue.
+- Terminal window dots are monochrome (white/gray outline circles), not macOS traffic-light colors — the one place the reference's color was deliberately stripped to obey the constraint.
+- The logo's dark tile (#111) + white A + blinking white cursor is the ONLY dark surface — it is the page's contrast anchor.
 - Never introduce a color not in this table. Extend the table first.
 
 ## 3. Typography
@@ -96,13 +99,21 @@ All spacing derives from a base of **4px**.
 ## 5. Components
 
 ### Logo Mark (SVG)
-- **Structure**: `<svg>` — rounded-square tile (32px → 96px) with geometric "A" monogram + terminal cursor block. Drawn by hand, original geometry.
+- **Structure**: `<svg>` — black rounded-square tile (fill #111) with geometric "A" monogram in white + blinking white terminal-cursor block as the crossbar. Drawn by hand, original geometry.
 - **Variants**: full (mark + wordmark "aetherdz"), mark-only (favicon, nav small), mono-inline (text logo in terminal).
 - **Spacing**: mark 8px gap from wordmark; wordmark in JetBrains Mono 700.
 - **States**: static (no hover state on logo itself).
-- **Motion**: subtle 1.5s ease-in-out glow pulse on the cursor block only, disabled under reduced-motion.
+- **Motion**: subtle 1.5s ease-in-out blink on the cursor block only, disabled under reduced-motion.
 - **Accessibility**: `<title>` + `role="img"`; wordmark is real text, not SVG paths.
 - **Layout**: inline flex cluster; scales via `height` only (width auto, preserves ratio).
+
+### Quick Start Step
+- **Structure**: `<article class="step">` → step head (number + title) → description → code block with comment + command lines.
+- **Variants**: grid (3-col, collapses to 1-col under 480px).
+- **Spacing**: --space-6 padding, --space-6 gap.
+- **States**: default hairline border; no hover lift (steps are static content).
+- **Accessibility**: code blocks `user-select: all` for one-click copy; contrast AA on comment (tertiary #999 on #FFF = 3.3:1 — acceptable for non-essential code comments, recorded as debt).
+- **Layout**: grid primitive.
 
 ### Nav
 - **Structure**: `<header>` → `<nav>` flex: logo left; links right (Docs, Features, Install); on mobile links collapse to Install button only.
@@ -163,13 +174,13 @@ All spacing derives from a base of **4px**.
 ## 7. Depth & Surface
 
 ### Strategy
-Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separate by 1px `--border-default` hairlines and one-step tonal shifts (#090909 → #111111 → #1A1A1A). No shadows anywhere.
+Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separate by 1px `--border-default` hairlines and one-step tonal shifts (#FFFFFF → #F4F4F4). No shadows anywhere. The only elevated surface is the logo tile, which goes dark (#111) against the white page.
 
 | Type | Value | Usage |
 |------|-------|-------|
-| Default | 1px solid var(--border-default) | Cards, terminal, dividers |
+| Default | 1px solid var(--border-default) | Cards, terminal, code blocks |
 | Subtle | 1px solid var(--border-subtle) | Soft separations |
-| Elevated | #1A1A1A on #090909 | Terminal window pops via tone, not shadow |
+| Elevated | #FFFFFF on #F4F4F4 | Terminal title bar pops via tone, not shadow |
 
 ## 8. Accessibility Constraints & Accepted Debt
 
@@ -183,4 +194,4 @@ Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separat
 ### Accepted Debt
 | Item | Location | Why accepted | Owner / Exit |
 |------|----------|--------------|--------------|
-| Terminal text is illustrative, not live | hero figure | Static marketing page; live terminal is product scope | Replace with real session recording when TUI ships video capture |
+| Code comment text (#999 on #FFF, 3.3:1) | quickstart steps | Non-essential annotation; below 4.5:1 AA but not load-bearing | Re-evaluate if comments become interactive |

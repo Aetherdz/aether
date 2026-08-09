@@ -1,26 +1,26 @@
 /* ============================================================
    aetherdz — design tokens (DESIGN.md §2–§4)
-   Dark mono terminal aesthetic · opencode.ai + jcode.sh
+   Light black & white mono aesthetic · jcode.sh discipline
    ============================================================ */
 
 :root {
-  /* Surface */
-  --surface-primary: #090909;
-  --surface-secondary: #111111;
-  --surface-elevated: #1A1A1A;
+  /* Surface — light, borders-only depth */
+  --surface-primary: #FFFFFF;
+  --surface-secondary: #F4F4F4;
+  --surface-elevated: #FFFFFF;
   /* Text */
-  --text-primary: #F2F1F0;
-  --text-secondary: #9C9C9C;
-  --text-tertiary: #666666;
+  --text-primary: #111111;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
   /* Border */
-  --border-default: #2A2A2A;
-  --border-subtle: #1E1E1E;
-  /* Accent */
-  --accent-primary: #FF9F0A;
-  --accent-hover: #FFB340;
-  /* Status */
-  --status-success: #30D158;
-  --status-error: #FF453A;
+  --border-default: #CCCCCC;
+  --border-subtle: #E5E5E5;
+  /* Accent — black & white: accent is ink, not color */
+  --accent-primary: #111111;
+  --accent-hover: #000000;
+  /* Status — monochrome grays */
+  --status-success: #111111;
+  --status-error: #666666;
   /* Spacing */
   --space-1: 4px;
   --space-2: 8px;
@@ -87,7 +87,7 @@ img, svg { display: block; }
 a { color: var(--text-secondary); text-decoration: none; transition: color 150ms var(--ease-out); }
 a:hover { color: var(--text-primary); }
 a:focus-visible, button:focus-visible {
-  outline: 2px solid var(--accent-primary);
+  outline: 2px solid var(--text-primary);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -97,8 +97,8 @@ a:focus-visible, button:focus-visible {
   left: -9999px;
   top: 0;
   z-index: 100;
-  background: var(--accent-primary);
-  color: #090909;
+  background: var(--text-primary);
+  color: var(--surface-primary);
   padding: var(--space-2) var(--space-4);
   font-weight: 700;
 }
@@ -122,7 +122,7 @@ a:focus-visible, button:focus-visible {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(9, 9, 9, 0.92);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -147,7 +147,7 @@ a:focus-visible, button:focus-visible {
 .brand:hover { color: var(--text-primary); }
 .brand-mark { flex: none; }
 .brand-name { font-size: var(--text-body); letter-spacing: 0.02em; }
-.brand-accent { color: var(--accent-primary); }
+.brand-accent { color: var(--text-primary); }
 
 .nav-links {
   display: flex;
@@ -165,7 +165,7 @@ a:focus-visible, button:focus-visible {
   padding: var(--space-1) var(--space-3);
   transition: border-color 150ms var(--ease-out), color 150ms var(--ease-out);
 }
-.nav-cta:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+.nav-cta:hover { border-color: var(--text-primary); }
 
 /* ============================================================
    Hero
@@ -183,7 +183,7 @@ a:focus-visible, button:focus-visible {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--accent-primary);
+  color: var(--text-secondary);
   margin: 0 0 var(--space-4);
 }
 
@@ -214,7 +214,7 @@ a:focus-visible, button:focus-visible {
   overflow: hidden;
   transition: border-color 150ms var(--ease-out);
 }
-.install-row.copied { border-color: var(--status-success); }
+.install-row.copied { border-color: var(--text-primary); }
 
 .install-code {
   flex: 1;
@@ -240,12 +240,12 @@ a:focus-visible, button:focus-visible {
   cursor: pointer;
   transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out);
 }
-.copy-btn:hover { color: var(--accent-primary); background: var(--surface-elevated); }
-.copy-btn:active { background: var(--surface-primary); }
+.copy-btn:hover { color: var(--text-primary); background: var(--surface-elevated); }
+.copy-btn:active { background: var(--surface-secondary); }
 
 .icon-check { display: none; }
 .install-row.copied .icon-copy { display: none; }
-.install-row.copied .icon-check { display: block; color: var(--status-success); }
+.install-row.copied .icon-check { display: block; color: var(--text-primary); }
 
 .install-meta {
   margin: var(--space-3) 0 0;
@@ -287,7 +287,7 @@ a:focus-visible, button:focus-visible {
   margin: 0 auto;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  background: var(--surface-elevated);
+  background: var(--surface-secondary);
   overflow: hidden;
   animation: rise 500ms var(--ease-out) both;
 }
@@ -298,13 +298,13 @@ a:focus-visible, button:focus-visible {
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-secondary);
+  background: var(--surface-primary);
 }
 
-.dot { width: 11px; height: 11px; border-radius: 50%; }
-.dot-red { background: var(--status-error); }
-.dot-yellow { background: var(--accent-primary); }
-.dot-green { background: var(--status-success); }
+.dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--border-default); }
+.dot-red { background: var(--surface-primary); }
+.dot-yellow { background: var(--surface-secondary); }
+.dot-green { background: var(--text-tertiary); }
 
 .terminal-path {
   margin-left: var(--space-2);
@@ -324,13 +324,13 @@ a:focus-visible, button:focus-visible {
 }
 
 .t-dim { color: var(--text-tertiary); }
-.t-prompt { color: var(--status-success); }
-.t-sys { color: var(--accent-primary); font-weight: 700; }
+.t-prompt { color: var(--text-primary); font-weight: 700; }
+.t-sys { color: var(--text-primary); font-weight: 700; }
 .t-plain { color: var(--text-secondary); }
 .t-cursor {
   display: inline-block;
   width: 0.6em;
-  background: var(--accent-primary);
+  background: var(--text-primary);
   color: transparent;
   animation: blink 1.2s steps(2, start) infinite;
 }
@@ -340,6 +340,77 @@ a:focus-visible, button:focus-visible {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ============================================================
+   Quick start (install & usage)
+   ============================================================ */
+
+.quickstart {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 var(--space-6) var(--space-20);
+}
+
+.quickstart .overline { margin-bottom: var(--space-2); }
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: var(--space-6);
+  margin-top: var(--space-12);
+}
+
+.step {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--surface-secondary);
+  padding: var(--space-6);
+}
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.step-num {
+  font-size: var(--text-overline);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-tertiary);
+}
+
+.step-title {
+  font-size: var(--text-h2);
+  font-weight: 700;
+  margin: 0;
+}
+
+.step p {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+.step-code {
+  display: block;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--surface-primary);
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.step-code.multi { white-space: pre; }
+
+.step-code .c-comment { color: var(--text-tertiary); }
+.step-code .c-cmd { color: var(--text-primary); font-weight: 700; }
 
 /* ============================================================
    Features
@@ -374,7 +445,7 @@ a:focus-visible, button:focus-visible {
   transition: border-color 150ms var(--ease-out), transform 150ms var(--ease-out);
 }
 .feature-card:hover {
-  border-color: var(--accent-primary);
+  border-color: var(--text-primary);
   transform: translateY(-2px);
 }
 
@@ -384,7 +455,7 @@ a:focus-visible, button:focus-visible {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--accent-primary);
+  color: var(--text-secondary);
 }
 
 .feature-card h3 {
@@ -452,6 +523,7 @@ a:focus-visible, button:focus-visible {
 @media (max-width: 480px) {
   .terminal-body { padding: var(--space-4); }
   .feature-grid { grid-template-columns: 1fr; }
+  .steps { grid-template-columns: 1fr; }
 }
 
 /* ============================================================
