@@ -66,6 +66,8 @@ pub enum Command {
         #[command(subcommand)]
         action: SyncAction,
     },
+    /// Launch the interactive ratatui terminal UI
+    Tui,
 }
 
 #[derive(Debug, Subcommand)]

@@ -40,7 +40,15 @@ async fn main() -> Result<()> {
         Command::Sessions { action } => cmd_sessions(action).await,
         Command::Recall { phrase } => cmd_recall(&phrase),
         Command::Sync { action } => cmd_sync(action).await,
+        Command::Tui => cmd_tui(),
     }
+}
+
+/// Launch the ratatui terminal UI.
+fn cmd_tui() -> Result<()> {
+    use aetherdz_tui::{RatatuiTui, Tui};
+    let mut tui = RatatuiTui::new().map_err(|e| Error::Config(e.to_string()))?;
+    tui.run().map_err(|e| Error::Config(e.to_string()))
 }
 
 /// Resolve the effective provider + model; print any fallback notice.

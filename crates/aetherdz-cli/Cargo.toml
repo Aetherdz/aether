@@ -15,6 +15,7 @@ aetherdz-core = { path = "../aetherdz-core" }
 aetherdz-provider = { path = "../aetherdz-provider" }
 aetherdz-session = { path = "../aetherdz-session" }
 aetherdz-sync = { path = "../aetherdz-sync" }
+aetherdz-tui = { path = "../aetherdz-tui" }
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true

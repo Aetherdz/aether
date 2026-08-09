@@ -4,7 +4,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Aetherdz terminal UI (placeholder in Phase 0; ratatui arrives in Phase 4)"
+description = "Aetherdz terminal UI — ratatui session list + chat with ctrl+P palette and mouse wheel"
 
 [dependencies]
 thiserror.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+futures.workspace = true
+tokio.workspace = true
+aetherdz-core = { path = "../aetherdz-core" }
+aetherdz-session = { path = "../aetherdz-session" }
+aetherdz-provider = { path = "../aetherdz-provider" }
