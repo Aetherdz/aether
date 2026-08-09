@@ -13,6 +13,8 @@
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/rust-1.97+-black?logo=rust&logoColor=white" alt="Rust 1.97+" /></a>
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
+  <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-86%20passing-brightgreen" alt="86 tests passing" /></a>
 </p>
 
 ---
@@ -34,6 +36,25 @@ exercise and became a full agent: chat, sessions, sync, MCP, and a ratatui TUI.
 | **MCP** | stdio + Streamable HTTP server built in | Requires separate config |
 
 No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
+
+### vs. specific tools
+
+| | Aether | Aider | Continue | Claude Code |
+|---|---|---|---|---|
+| **Runtime** | Native Rust binary | Python | Node/VS Code | Node |
+| **Install** | `cargo install` (one binary) | `pip install` | VS Code ext | npm package |
+| **Free default provider** | ✅ built-in `zen` | ❌ needs key (Ollama optional) | ⚠️ local models only | ❌ Anthropic key |
+| **Agent loop w/ tools** | ✅ plan→build→route (3 models) | ✅ | ✅ | ✅ |
+| **Sandboxed tools** | ✅ path-sandboxed, 30 s timeout | ⚠️ per-command confirm | ⚠️ | ⚠️ |
+| **Sessions as plain files** | ✅ JSONL | ⚠️ sqlite | ❌ | ❌ |
+| **Cross-device sync** | ✅ gist/folder line-merge | ❌ | ❌ | ❌ |
+| **MCP server** | ✅ built in (stdio + HTTP) | ❌ (client only) | ✅ client | ✅ client |
+| **Telemetry** | ❌ none, verifiable | ⚠️ opt-in | ⚠️ | ⚠️ |
+| **Local models (Ollama/LM Studio)** | ✅ first-class providers | ✅ | ✅ | ❌ |
+
+> Startup time and RAM figures will be published in a reproducible benchmark
+> (see [benchmark/](benchmark/)) — numbers on this table are architectural
+> claims until then.
 
 ## Quick start
 
@@ -186,9 +207,38 @@ the original TypeScript file it ports; behavior is verified against golden
 outputs rather than re-implemented from memory. That discipline is what made
 this more than a rewrite — it's a faithful, faster, dependency-free twin.
 
+### Docs index
+
+| Doc | What it covers |
+|---|---|
+| [rust-migration-blueprint.md](docs/rust-migration-blueprint.md) | The full migration plan: architecture, crate layout, phases, risks |
+| [build-plan-v2.md](docs/build-plan-v2.md) | Second-pass build plan, sequencing, and status |
+| [phase1-session-spec.md](docs/phase1-session-spec.md) | JSONL session format, auto-title, recall, usage ledger |
+| [phase2-sync-spec.md](docs/phase2-sync-spec.md) | Gist/folder sync backends, line-level merge semantics |
+| [phase3-mcp-spec.md](docs/phase3-mcp-spec.md) | MCP server over stdio + Streamable HTTP |
+| [phase4-tools-agent-auth-tui-spec.md](docs/phase4-tools-agent-auth-tui-spec.md) | Sandboxed tools, 3-model agent loop, auth, ratatui TUI |
+| [inspiration-extraction.md](docs/inspiration-extraction.md) | Design notes extracted from the original AETHER |
+
+## Security
+
+Aether is a local-first tool that can execute commands on your behalf — read
+the [threat model](SECURITY.md) before granting it elevated trust. In short:
+
+- **File tools** (`read_file`, `write_file`, `list_dir`, `search`) are
+  sandboxed to the working directory: absolute paths, `..` escapes and NUL
+  bytes are rejected before touching disk.
+- **`run_command`** executes via `/bin/sh -c` with a **30-second timeout**
+  and **128 KB output cap**. It is *not* network-isolated and has no
+  allow-list — treat it as "run this command as you". Only run `agent` in
+  directories you trust with shell access.
+- **API keys** are read from environment variables / config files; they are
+  never written into sessions or logs.
+
 ## Contributing
 
-Ideas, issues, and PRs welcome. Open an issue first for anything non-trivial.
+Ideas, issues, and PRs welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for
+the workflow and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for the ground
+rules. Open an issue first for anything non-trivial.
 
 ```sh
 cargo fmt --all -- --check
