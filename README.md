@@ -14,7 +14,7 @@
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
   <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-86%20passing-brightgreen" alt="86 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-120%20passing-brightgreen" alt="120 tests passing" /></a>
 </p>
 
 ---
@@ -28,12 +28,36 @@ exercise and became a full agent: chat, sessions, sync, MCP, and a ratatui TUI.
   <img src="site/demo.gif" width="800" alt="aether in action — help, providers, models, ask, sessions" />
 </p>
 
+## Install
+
+One command, verified checksum-first — downloads the prebuilt binary for your
+OS/arch from GitHub Releases, verifies its SHA-256, and installs it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash
+```
+
+Installs to `~/.local/bin` (falls back to `/usr/local/bin`). Overrides:
+`AETHER_VERSION` (tag, default `latest`) and `AETHER_INSTALL_DIR`.
+
+### Download types
+
+| OS      | x86_64 / amd64           | aarch64 / arm64         |
+|---------|--------------------------|-------------------------|
+| Linux   | `aether-linux-x86_64`    | `aether-linux-aarch64`  |
+| macOS   | `aether-macos-x86_64`    | `aether-macos-aarch64`  |
+| Windows | `aether-windows-x86_64.exe` | —                     |
+
+Every release ships `SHA256SUMS.txt`; the installer refuses to install on a
+mismatch. No Node, no Python, no package-manager hoops — one native binary.
+
 ## Why Aether?
 
 |  | Aether | Node-based agents |
 |---|---|---|
 | **Runtime** | One native Rust binary | Node + hundreds of MB of deps |
-| **Startup** | Instant — compiled, no interpreter | Cold start on every run |
+| **Size** | **4.99 MB** — one stripped binary | hundreds of MB installed |
+| **Startup** | **~112 ms** cold start | 1 s+ cold start per run |
 | **Default provider** | Free `zen` — works with zero API keys | Usually paid keys required |
 | **Session format** | Plain JSONL — grep it, script it, own it | Often bespoke databases |
 | **Sync** | Gist or folder, line-level merge | Varies, rarely portable |
@@ -41,12 +65,14 @@ exercise and became a full agent: chat, sessions, sync, MCP, and a ratatui TUI.
 
 No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 
-### vs. specific tools
+### vs. specific tools (2026)
 
 | | Aether | Aider | Continue | Claude Code | opencode | jcode |
 |---|---|---|---|---|---|---|
-| **Runtime** | Native Rust binary | Python | Node/VS Code | Node | TypeScript/Node | Rust binary |
-| **Install** | `cargo install` (one binary) | `pip install` | VS Code ext | npm package | npm/curl | cargo build |
+| **Runtime** | Native Rust binary | Python | Node/VS Code | Node | TypeScript/Bun | Rust binary |
+| **Install** | `curl \| bash` (prebuilt) | `pip install` | VS Code ext | npm package | npm/curl | curl (prebuilt) |
+| **Binary size** | **4.99 MB** (measured) | — (Python) | — (Node) | — (Node) | 35–55 MB* | — (Rust) |
+| **Startup** | **~112 ms** `--version` (measured) | — | — | ~3.4 s† | ~1 s† | ~14 ms† (to first frame) |
 | **Free default provider** | ✅ built-in `zen` | ❌ needs key (Ollama optional) | ⚠️ local models only | ❌ Anthropic key | ⚠️ needs key/local | ⚠️ needs key/local |
 | **Agent loop w/ tools** | ✅ plan→build→route (3 models) | ✅ | ✅ | ✅ | ✅ | ⚠️ partial |
 | **Sandboxed tools** | ✅ path-sandboxed, 30 s timeout | ⚠️ per-command confirm | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
@@ -58,9 +84,10 @@ No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 | **Telemetry** | ❌ none, verifiable | ⚠️ opt-in | ⚠️ | ⚠️ | ⚠️ | ❌ |
 | **Local models (Ollama/LM Studio)** | ✅ first-class providers | ✅ | ✅ | ❌ | ✅ | ⚠️ |
 
-> Measured on this repo (see [benchmark/](benchmark/) for the harness):
-> **4.99 MB binary · ~112 ms cold start · ~5 MB idle TUI RSS** — reproducible
-> via `./benchmark/run.sh`. Numbers above are architectural claims otherwise.
+> Aether figures are **measured in this repo** by [benchmark/run.sh](benchmark/run.sh)
+> (5-run median, 2026-08-09) — same binary, same machine, reproducible.
+> Other tools' figures are **their own published claims**, not measured here:
+> `*` platform-binary size per third-party report; `†` vendor-published time-to-first-frame / boot benchmarks. Startup metrics are **not directly comparable** across tools (we measure `--version` exit; jcode/Claude Code publish first-frame time).
 
 ## Quick start
 
@@ -97,18 +124,18 @@ with sensible defaults — the only setup is running the server itself.
 
 ## What it does
 
+Six root commands; the legacy names (`use`, `models`, `providers`, `sessions`,
+`recall`, `sync`, `undo`) still parse but print a one-line deprecation notice:
+
 | Command | Description |
 |---|---|
 | `aether ask "…"` | One-shot question, streams the answer |
-| `aether agent "task"` | 3-model agent loop: plan → build → route with tools |
 | `aether chat` | Interactive REPL chat |
-| `aether use provider/model` | Set default provider and model |
-| `aether models [--live]` | List models (zen fetches live) |
-| `aether providers` | List all providers + key status |
-| `aether sessions` | List, show, resume, rename, delete sessions |
-| `aether recall "…"` | Keyword search across past sessions |
-| `aether sync` | Sync sessions across devices (gist/folder) |
+| `aether agent "task"` | 3-model agent loop: plan → build → route with tools |
+| `aether agent undo [f]` | List / restore write snapshots |
 | `aether tui` | Full ratatui terminal UI |
+| `aether provider …` | `list` · `models [--live]` · `use provider/model` |
+| `aether session …` | `list` · `show` · `delete` · `rename` · `resume` · `search` · `sync` |
 
 ```sh
 # A real session
@@ -209,16 +236,19 @@ Requirements: **Rust 1.97+** (edition 2024), a C toolchain for linking.
 
 ## Status
 
-Phase 0–4 complete — the binary works end to end:
+Phase 0–4 complete — the binary works end to end. Six root commands
+(`ask`, `chat`, `agent`, `tui`, `provider`, `session`); the legacy names
+(`use`, `models`, `providers`, `sessions`, `recall`, `sync`, `undo`) still
+parse but print a deprecation notice:
 
 - [x] `ask` / `chat` — one-shot streaming + interactive REPL
-- [x] `agent` — 3-model loop (plan → build → route) with sandboxed tools
-- [x] `use` / `models` / `providers` — provider management, graceful zen fallback
-- [x] `sessions` — JSONL store, auto-title, recall search, usage ledger
-- [x] `recall` — keyword search across past sessions
-- [x] `sync` — gist or folder backends with line-level merge
+- [x] `agent` — 3-model loop (plan → build → route) with sandboxed tools, write snapshots + `agent undo`
+- [x] `provider` — `list` / `models [--live]` / `use provider/model`, graceful zen fallback
+- [x] `session` — JSONL store, auto-title, recall search, usage ledger
+- [x] `sync` (legacy) — gist or folder backends with line-level merge
 - [x] `mcp` — MCP server over stdio + Streamable HTTP
 - [x] `tui` — ratatui terminal UI with Ctrl+P palette and token ledger
+- [x] `benchmark/` — reproducible harness: **4.99 MB · ~112 ms · ~5 MB RSS**
 
 > Early development: APIs may shift until 1.0. Golden tests keep every port
 > honest — behavior is verified against reference outputs, never re-imagined.

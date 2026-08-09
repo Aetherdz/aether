@@ -1,2 +1,4 @@
 date           size_mb      start_ms       tui_rss_kb
 2026-08-09T21:15:27Z 4.99         112            4996
+date           size_mb      start_ms       tui_rss_kb
+2026-08-09T21:47:53Z 4.99         105            5020
