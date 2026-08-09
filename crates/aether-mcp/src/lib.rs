@@ -7,10 +7,8 @@
 use aether_session::{Recall, Session, SessionId};
 use aether_sync::{github_token, load_state, pull, push, resolve_backend};
 use rmcp::{
-    ErrorData, ServiceExt,
-    handler::server::wrapper::Parameters,
-    model::ErrorCode,
-    schemars, tool, tool_router,
+    ErrorData, ServiceExt, handler::server::wrapper::Parameters, model::ErrorCode, schemars, tool,
+    tool_router,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -69,7 +67,9 @@ impl AetherServer {
     ) -> Result<String, ErrorData> {
         let session =
             Session::open(&SessionId::new(id.clone())).map_err(|e| internal(e.to_string()))?;
-        let messages = session.read_messages().map_err(|e| internal(e.to_string()))?;
+        let messages = session
+            .read_messages()
+            .map_err(|e| internal(e.to_string()))?;
         let rows: Vec<_> = messages
             .iter()
             .map(|m| json!({ "role": m.role, "content": m.content, "ts": m.ts }))
@@ -148,7 +148,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error + Send + Sync
 /// Serve the Streamable HTTP / SSE transport on `addr` (e.g. "127.0.0.1:8080").
 pub async fn serve_http(addr: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use rmcp::transport::streamable_http_server::{
-        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     };
 
     let config = StreamableHttpServerConfig::default()
@@ -172,8 +172,7 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn isolate(tag: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("aether-mcp-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("aether-mcp-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         unsafe { std::env::set_var("AETHER_CONFIG_DIR", &dir) };
         let sessions = dir.join("sessions");

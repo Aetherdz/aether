@@ -63,43 +63,219 @@ struct BuiltinSpec {
 
 /// The full built-in provider catalog, same set and order as the TS registry.
 const BUILTINS: &[BuiltinSpec] = &[
-    BuiltinSpec { id: "zen", name: "OpenCode Zen", kind: "zen", key_env: None, needs_key: false, free: Pricing::Free, description: "Free OpenAI-compatible endpoint, no API key required", default_model: "deepseek-v4-flash-free" },
-    BuiltinSpec { id: "openai", name: "OpenAI", kind: "openai", key_env: Some("OPENAI_API_KEY"), needs_key: true, free: Pricing::Paid, description: "OpenAI hosted models", default_model: "gpt-4o" },
-    BuiltinSpec { id: "anthropic", name: "Anthropic Claude", kind: "anthropic", key_env: Some("ANTHROPIC_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Anthropic Claude models", default_model: "claude-sonnet-4-5" },
-    BuiltinSpec { id: "google", name: "Google Gemini", kind: "google", key_env: Some("GOOGLE_GENERATIVE_AI_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Google Gemini models (free tier available)", default_model: "gemini-3-flash" },
-    BuiltinSpec { id: "deepseek", name: "DeepSeek", kind: "deepseek", key_env: Some("DEEPSEEK_API_KEY"), needs_key: true, free: Pricing::Paid, description: "DeepSeek hosted models", default_model: "deepseek-chat" },
-    BuiltinSpec { id: "openrouter", name: "OpenRouter", kind: "openrouter", key_env: Some("OPENROUTER_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Aggregated models incl. free tiers", default_model: "deepseek/deepseek-chat" },
-    BuiltinSpec { id: "ollama", name: "Ollama (local)", kind: "ollama", key_env: None, needs_key: false, free: Pricing::Free, description: "Local Ollama server, no key", default_model: "llama3.2" },
-    BuiltinSpec { id: "groq", name: "Groq", kind: "groq", key_env: Some("GROQ_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Fast inference on Llama/other open models", default_model: "llama-3.3-70b-versatile" },
-    BuiltinSpec { id: "mistral", name: "Mistral", kind: "mistral", key_env: Some("MISTRAL_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Mistral Large/Small + Codestral", default_model: "mistral-large-latest" },
-    BuiltinSpec { id: "xai", name: "xAI", kind: "xai", key_env: Some("XAI_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Grok models by xAI", default_model: "grok-4" },
-    BuiltinSpec { id: "cerebras", name: "Cerebras", kind: "cerebras", key_env: Some("CEREBRAS_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Ultra-fast Llama on Cerebras hardware", default_model: "llama3.1-8b" },
-    BuiltinSpec { id: "togetherai", name: "Together AI", kind: "togetherai", key_env: Some("TOGETHER_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Open models incl. DeepSeek, Llama, Qwen", default_model: "deepseek-ai/DeepSeek-V3" },
-    BuiltinSpec { id: "fireworks", name: "Fireworks", kind: "fireworks", key_env: Some("FIREWORKS_API_KEY"), needs_key: true, free: Pricing::FreePaid, description: "Fast open-model inference", default_model: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
-    BuiltinSpec { id: "perplexity", name: "Perplexity", kind: "perplexity", key_env: Some("PERPLEXITY_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Sonar models with web-grounded answers", default_model: "sonar-pro" },
-    BuiltinSpec { id: "moonshot", name: "Moonshot", kind: "moonshot", key_env: Some("MOONSHOT_API_KEY"), needs_key: true, free: Pricing::Paid, description: "Kimi models (long context)", default_model: "kimi-k2" },
-    BuiltinSpec { id: "minimax", name: "MiniMax", kind: "minimax", key_env: Some("MINIMAX_API_KEY"), needs_key: true, free: Pricing::Paid, description: "MiniMax M2/Text models", default_model: "MiniMax-M2" },
-    BuiltinSpec { id: "huggingface", name: "HuggingFace", kind: "huggingface", key_env: Some("HF_TOKEN"), needs_key: true, free: Pricing::FreePaid, description: "Open models via HF Inference Router", default_model: "qwen/Qwen2.5-72B-Instruct" },
-    BuiltinSpec { id: "lmstudio", name: "LM Studio", kind: "lmstudio", key_env: None, needs_key: false, free: Pricing::Free, description: "Local LM Studio server, no key", default_model: "local-model" },
-    BuiltinSpec { id: "github", name: "GitHub Models", kind: "github", key_env: Some("GITHUB_TOKEN"), needs_key: true, free: Pricing::FreePaid, description: "Free GPT models via GitHub Models", default_model: "gpt-4.1" },
+    BuiltinSpec {
+        id: "zen",
+        name: "OpenCode Zen",
+        kind: "zen",
+        key_env: None,
+        needs_key: false,
+        free: Pricing::Free,
+        description: "Free OpenAI-compatible endpoint, no API key required",
+        default_model: "deepseek-v4-flash-free",
+    },
+    BuiltinSpec {
+        id: "openai",
+        name: "OpenAI",
+        kind: "openai",
+        key_env: Some("OPENAI_API_KEY"),
+        needs_key: true,
+        free: Pricing::Paid,
+        description: "OpenAI hosted models",
+        default_model: "gpt-4o",
+    },
+    BuiltinSpec {
+        id: "anthropic",
+        name: "Anthropic Claude",
+        kind: "anthropic",
+        key_env: Some("ANTHROPIC_API_KEY"),
+        needs_key: true,
+        free: Pricing::Paid,
+        description: "Anthropic Claude models",
+        default_model: "claude-sonnet-4-5",
+    },
+    BuiltinSpec {
+        id: "google",
+        name: "Google Gemini",
+        kind: "google",
+        key_env: Some("GOOGLE_GENERATIVE_AI_API_KEY"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Google Gemini models (free tier available)",
+        default_model: "gemini-3-flash",
+    },
+    BuiltinSpec {
+        id: "deepseek",
+        name: "DeepSeek",
+        kind: "deepseek",
+        key_env: Some("DEEPSEEK_API_KEY"),
+        needs_key: true,
+        free: Pricing::Paid,
+        description: "DeepSeek hosted models",
+        default_model: "deepseek-chat",
+    },
+    BuiltinSpec {
+        id: "openrouter",
+        name: "OpenRouter",
+        kind: "openrouter",
+        key_env: Some("OPENROUTER_API_KEY"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Aggregated models incl. free tiers",
+        default_model: "deepseek/deepseek-chat",
+    },
+    BuiltinSpec {
+        id: "ollama",
+        name: "Ollama (local)",
+        kind: "ollama",
+        key_env: None,
+        needs_key: false,
+        free: Pricing::Free,
+        description: "Local Ollama server, no key",
+        default_model: "llama3.2",
+    },
+    BuiltinSpec {
+        id: "groq",
+        name: "Groq",
+        kind: "groq",
+        key_env: Some("GROQ_API_KEY"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Fast inference on Llama/other open models",
+        default_model: "llama-3.3-70b-versatile",
+    },
+    BuiltinSpec {
+        id: "mistral",
+        name: "Mistral",
+        kind: "mistral",
+        key_env: Some("MISTRAL_API_KEY"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Mistral Large/Small + Codestral",
+        default_model: "mistral-large-latest",
+    },
+    BuiltinSpec {
+        id: "xai",
+        name: "xAI",
+        kind: "xai",
+        key_env: Some("XAI_API_KEY"),
+        needs_key: true,
+        free: Pricing::Paid,
+        description: "Grok models by xAI",
+        default_model: "grok-4",
+    },
+    BuiltinSpec {
+        id: "cerebras",
+        name: "Cerebras",
+        kind: "cerebras",
+        key_env: Some("CEREBRAS_API_KEY"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Ultra-fast Llama on Cerebras hardware",
+        default_model: "llama3.1-8b",
+    },
+    BuiltinSpec {
+        id: "togetherai",
+        name: "Together AI",
+        kind: "togetherai",
+        key_env: Some("TOGETHER_API_KEY"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Open models incl. DeepSeek, Llama, Qwen",
+        default_model: "deepseek-ai/DeepSeek-V3",
+    },
+    BuiltinSpec {
+        id: "fireworks",
+        name: "Fireworks",
+        kind: "fireworks",
+        key_env: Some("FIREWORKS_API_KEY"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Fast open-model inference",
+        default_model: "accounts/fireworks/models/llama-v3p3-70b-instruct",
+    },
+    BuiltinSpec {
+        id: "perplexity",
+        name: "Perplexity",
+        kind: "perplexity",
+        key_env: Some("PERPLEXITY_API_KEY"),
+        needs_key: true,
+        free: Pricing::Paid,
+        description: "Sonar models with web-grounded answers",
+        default_model: "sonar-pro",
+    },
+    BuiltinSpec {
+        id: "moonshot",
+        name: "Moonshot",
+        kind: "moonshot",
+        key_env: Some("MOONSHOT_API_KEY"),
+        needs_key: true,
+        free: Pricing::Paid,
+        description: "Kimi models (long context)",
+        default_model: "kimi-k2",
+    },
+    BuiltinSpec {
+        id: "minimax",
+        name: "MiniMax",
+        kind: "minimax",
+        key_env: Some("MINIMAX_API_KEY"),
+        needs_key: true,
+        free: Pricing::Paid,
+        description: "MiniMax M2/Text models",
+        default_model: "MiniMax-M2",
+    },
+    BuiltinSpec {
+        id: "huggingface",
+        name: "HuggingFace",
+        kind: "huggingface",
+        key_env: Some("HF_TOKEN"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Open models via HF Inference Router",
+        default_model: "qwen/Qwen2.5-72B-Instruct",
+    },
+    BuiltinSpec {
+        id: "lmstudio",
+        name: "LM Studio",
+        kind: "lmstudio",
+        key_env: None,
+        needs_key: false,
+        free: Pricing::Free,
+        description: "Local LM Studio server, no key",
+        default_model: "local-model",
+    },
+    BuiltinSpec {
+        id: "github",
+        name: "GitHub Models",
+        kind: "github",
+        key_env: Some("GITHUB_TOKEN"),
+        needs_key: true,
+        free: Pricing::FreePaid,
+        description: "Free GPT models via GitHub Models",
+        default_model: "gpt-4.1",
+    },
 ];
 
 /// Build the provided catalog preserving the TS order.
 pub fn builtin_providers() -> Vec<OpenAIProvider> {
     // zen is special-cased first (default provider), then the rest.
     let mut providers = vec![zen_provider()];
-    providers.extend(BUILTINS.iter().filter(|b| b.id != "zen").map(|b| OpenAIProvider {
-        id: b.id.to_string(),
-        name: b.name.to_string(),
-        kind: b.kind.to_string(),
-        base_url: platform_base_url(b.id, b.kind),
-        key_env: b.key_env.map(str::to_string),
-        needs_key: b.needs_key,
-        free: b.free,
-        description: b.description.to_string(),
-        default_model: b.default_model.to_string(),
-        static_models: static_models(b.id),
-    }));
+    providers.extend(
+        BUILTINS
+            .iter()
+            .filter(|b| b.id != "zen")
+            .map(|b| OpenAIProvider {
+                id: b.id.to_string(),
+                name: b.name.to_string(),
+                kind: b.kind.to_string(),
+                base_url: platform_base_url(b.id, b.kind),
+                key_env: b.key_env.map(str::to_string),
+                needs_key: b.needs_key,
+                free: b.free,
+                description: b.description.to_string(),
+                default_model: b.default_model.to_string(),
+                static_models: static_models(b.id),
+            }),
+    );
     providers
 }
 
@@ -438,9 +614,15 @@ mod tests {
     #[test]
     fn extract_zen_shapes() {
         let arr = serde_json::json!(["a", "b"]);
-        assert_eq!(extract_model_ids(&arr), vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(
+            extract_model_ids(&arr),
+            vec!["a".to_string(), "b".to_string()]
+        );
         let obj = serde_json::json!({"data": [{"id": "x"}, {"id": "y"}]});
-        assert_eq!(extract_model_ids(&obj), vec!["x".to_string(), "y".to_string()]);
+        assert_eq!(
+            extract_model_ids(&obj),
+            vec!["x".to_string(), "y".to_string()]
+        );
         let obj2 = serde_json::json!({"models": ["m1"]});
         assert_eq!(extract_model_ids(&obj2), vec!["m1".to_string()]);
     }

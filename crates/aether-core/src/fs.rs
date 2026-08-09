@@ -34,7 +34,9 @@ pub fn safe_join(base: &Path, name: &str) -> Result<PathBuf> {
 pub fn safe_join_rel(base: &Path, rel: &str) -> Result<PathBuf> {
     if rel.is_empty()
         || Path::new(rel).is_absolute()
-        || rel.split(['/', '\\']).any(|c| c.is_empty() || c == "." || c == "..")
+        || rel
+            .split(['/', '\\'])
+            .any(|c| c.is_empty() || c == "." || c == "..")
         || rel.contains('\0')
     {
         return Err(Error::PathTraversal(rel.to_string()));
@@ -98,7 +100,16 @@ mod tests {
             safe_join_rel(base, "src/lib.rs").unwrap(),
             base.join("src/lib.rs")
         );
-        for bad in ["../x", "/etc/passwd", "a/../../b", "..", ".", "", "a\0b", "a//b"] {
+        for bad in [
+            "../x",
+            "/etc/passwd",
+            "a/../../b",
+            "..",
+            ".",
+            "",
+            "a\0b",
+            "a//b",
+        ] {
             assert!(
                 matches!(safe_join_rel(base, bad), Err(Error::PathTraversal(_))),
                 "expected escape rejection for {bad:?}"

@@ -1,6 +1,15 @@
 //! Tool registry for the build model: filesystem + command execution,
 //! sandboxed to a working directory.
+//!
+//! Safety layers:
+//! - paths resolve through [`safe_join_rel`] (rejects traversal/absolute/NUL)
+//! - `write_file` shows a diff preview and asks for confirmation unless the
+//!   confirm gate is disabled or `--yes` was given; on a non-TTY stdin with
+//!   no `--yes` it refuses to write
+//! - every replaced file is snapshotted into `<root>/.aether-undo/` so the
+//!   `undo` tool (and `aether undo` CLI) can restore it
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -10,31 +19,50 @@ use aether_core::fs::safe_join_rel;
 use aether_provider::ToolDef;
 use serde_json::Value;
 
+use crate::diff::{DiffLine, DiffLineKind, diff_lines, render_diff};
+use crate::undo::{UNDO_DIR_NAME, UndoJournal};
+
 /// Cap on bytes read from any single file (protects the model context).
 pub const MAX_READ_BYTES: u64 = 256 * 1024;
 /// Cap on command output captured (stdout + stderr combined).
 pub const MAX_OUTPUT_BYTES: usize = 128 * 1024;
 /// Default command timeout.
 pub const CMD_TIMEOUT: Duration = Duration::from_secs(30);
+/// Maximum diff lines shown in a write preview.
+pub const MAX_DIFF_LINES: usize = 40;
+
+/// How `write_file` handles the confirmation gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmPolicy {
+    /// Gate disabled — writes proceed without asking.
+    Disabled,
+    /// Auto-approve every write (non-interactive `--yes`).
+    AutoApprove,
+    /// Show the diff and require y/N; refuse when stdin is not a TTY.
+    Prompt,
+}
 
 /// A tool execution result rendered as text for the model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolResult {
     pub ok: bool,
     pub text: String,
+    /// True when the call actually modified the filesystem (write/undo).
+    pub modified: bool,
 }
 
 /// Filesystem + command tools bound to a working directory.
 #[derive(Debug, Clone)]
 pub struct Tools {
     root: PathBuf,
+    confirm: ConfirmPolicy,
+    undo: UndoJournal,
 }
 
 /// Parse tool arguments as a JSON object.
 fn args_obj(args: &Value) -> Result<&serde_json::Map<String, Value>> {
-    args.as_object().ok_or_else(|| {
-        Error::InvalidInput("tool arguments must be a JSON object".to_string())
-    })
+    args.as_object()
+        .ok_or_else(|| Error::InvalidInput("tool arguments must be a JSON object".to_string()))
 }
 
 /// Read a string field from tool arguments.
@@ -46,7 +74,34 @@ fn arg_str<'a>(obj: &'a serde_json::Map<String, Value>, name: &str) -> Result<&'
 
 impl Tools {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            confirm: ConfirmPolicy::Disabled,
+            undo: UndoJournal::new(&root),
+            root,
+        }
+    }
+
+    /// Enable or disable the confirmation gate for writes.
+    ///
+    /// The environment variable `AETHER_AGENT_CONFIRM=0` forces the gate off
+    /// (used by non-interactive tests/CI). `true` means prompt interactively.
+    pub fn with_confirm(mut self, enabled: bool) -> Self {
+        self.confirm = if enabled {
+            if std::env::var("AETHER_AGENT_CONFIRM").as_deref() == Ok("0") {
+                ConfirmPolicy::Disabled
+            } else {
+                ConfirmPolicy::Prompt
+            }
+        } else {
+            ConfirmPolicy::Disabled
+        };
+        self
+    }
+
+    /// Auto-approve all writes (non-interactive `--yes`).
+    pub fn with_yes(mut self) -> Self {
+        self.confirm = ConfirmPolicy::AutoApprove;
+        self
     }
 
     /// The OpenAI `tools[]` descriptors for the registry.
@@ -68,7 +123,7 @@ impl Tools {
                 kind: "function".to_string(),
                 function: aether_provider::ToolFunction {
                     name: "write_file".to_string(),
-                    description: "Write a text file relative to the working directory, overwriting if present. Creates parent directories.".to_string(),
+                    description: "Write a text file relative to the working directory, overwriting if present. Creates parent directories. The previous content is snapshotted and may require confirmation.".to_string(),
                     parameters: Some(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -118,29 +173,43 @@ impl Tools {
                     })),
                 },
             },
+            ToolDef {
+                kind: "function".to_string(),
+                function: aether_provider::ToolFunction {
+                    name: "undo".to_string(),
+                    description: "Restore a file to its most recent pre-write snapshot. Pass {\"file\":\"rel/path\"} to restore that file, or {} to list available snapshots.".to_string(),
+                    parameters: Some(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "file": {"type": "string", "description": "relative path to restore; omit to list snapshots"}
+                        },
+                        "required": []
+                    })),
+                },
+            },
         ]
     }
 
     /// Execute one tool call by name with JSON arguments.
     pub fn call(&self, name: &str, args: &Value) -> Result<ToolResult> {
         let obj = args_obj(args)?;
-        let text = match name {
-            "read_file" => self.read_file(arg_str(obj, "path")?)?,
+        match name {
+            "read_file" => self.read_file(arg_str(obj, "path")?),
             "write_file" => {
                 let path = arg_str(obj, "path")?;
                 let content = arg_str(obj, "content")?;
-                self.write_file(path, content)?
+                self.write_file(path, content)
             }
-            "list_dir" => self.list_dir(arg_str(obj, "path")?)?,
-            "run_command" => self.run_command(arg_str(obj, "cmd")?)?,
+            "list_dir" => self.list_dir(arg_str(obj, "path")?),
+            "run_command" => self.run_command(arg_str(obj, "cmd")?),
             "search" => {
                 let needle = arg_str(obj, "needle")?;
                 let path = arg_str(obj, "path")?;
-                self.search(needle, path)?
+                self.search(needle, path)
             }
-            other => return Err(Error::InvalidInput(format!("unknown tool \"{other}\""))),
-        };
-        Ok(ToolResult { ok: true, text })
+            "undo" => self.undo_tool(obj),
+            other => Err(Error::InvalidInput(format!("unknown tool \"{other}\""))),
+        }
     }
 
     /// Resolve a relative path inside the sandbox.
@@ -148,7 +217,7 @@ impl Tools {
         safe_join_rel(&self.root, rel)
     }
 
-    fn read_file(&self, rel: &str) -> Result<String> {
+    fn read_file(&self, rel: &str) -> Result<ToolResult> {
         let path = self.resolve(rel)?;
         let meta = std::fs::metadata(&path)?;
         if meta.len() > MAX_READ_BYTES {
@@ -159,22 +228,126 @@ impl Tools {
         }
         let bytes = std::fs::read(&path)?;
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        Ok(format!(
-            "== {rel} ({} bytes) ==\n{text}",
-            bytes.len()
-        ))
+        Ok(ToolResult {
+            ok: true,
+            text: format!("== {rel} ({} bytes) ==\n{text}", bytes.len()),
+            modified: false,
+        })
     }
 
-    fn write_file(&self, rel: &str, content: &str) -> Result<String> {
+    fn write_file(&self, rel: &str, content: &str) -> Result<ToolResult> {
         let path = self.resolve(rel)?;
-        if let Some(parent) = path.parent() {
-            aether_core::fs::ensure_dir(parent)?;
+        self.reject_undo_path(rel)?;
+
+        // Existing content (if any) for diff + snapshot purposes.
+        let old = if path.exists() {
+            std::fs::read_to_string(&path).ok()
+        } else {
+            None
+        };
+
+        let diff = diff_lines(old.as_deref().unwrap_or(""), content);
+        let changes = diff.iter().any(|l| l.kind != DiffLineKind::Same);
+        if changes {
+            match self.confirm {
+                ConfirmPolicy::Disabled | ConfirmPolicy::AutoApprove => {}
+                ConfirmPolicy::Prompt => self.confirm_change(rel, &diff)?,
+            }
         }
-        std::fs::write(&path, content)?;
-        Ok(format!("wrote {} bytes to {rel}", content.len()))
+
+        // Snapshot the file being replaced BEFORE overwriting it.
+        if let Some(old_content) = &old {
+            self.undo.snapshot(rel, old_content)?;
+        }
+
+        aether_core::fs::atomic_write(&path, content.as_bytes())?;
+        Ok(ToolResult {
+            ok: true,
+            text: format!("wrote {} bytes to {rel}", content.len()),
+            modified: true,
+        })
     }
 
-    fn list_dir(&self, rel: &str) -> Result<String> {
+    /// Interactive confirm gate: show the diff on stderr, require y/N.
+    /// Refuses when stdin is not a TTY (caller should have checked, but we
+    /// double-check here so a non-interactive process can never hang).
+    fn confirm_change(&self, rel: &str, diff: &[DiffLine]) -> Result<()> {
+        use std::io::Write;
+        if !std::io::stdin().is_terminal() {
+            return Err(Error::InvalidInput(format!(
+                "refusing to write {rel}: stdin is not a TTY and no --yes flag was given \
+                 (re-run with --yes or from an interactive terminal)"
+            )));
+        }
+        eprintln!("--- {rel}");
+        eprintln!("+++ {rel} (proposed)");
+        eprint!("{}", render_diff(diff, MAX_DIFF_LINES));
+        eprint!("Write {rel}? [y/N] ");
+        let _ = std::io::stderr().flush();
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+        match line.trim().to_ascii_lowercase().as_str() {
+            "y" | "yes" => Ok(()),
+            _ => Err(Error::InvalidInput(format!(
+                "write to {rel} refused by user"
+            ))),
+        }
+    }
+
+    /// The `undo` tool: restore a file to its most recent snapshot, or list
+    /// snapshots when no `file` argument is given.
+    fn undo_tool(&self, obj: &serde_json::Map<String, Value>) -> Result<ToolResult> {
+        match obj.get("file").and_then(Value::as_str) {
+            Some(rel) => {
+                let restored = self.undo.restore(rel)?;
+                Ok(ToolResult {
+                    ok: true,
+                    text: format!(
+                        "restored {rel} from snapshot {} ({} bytes)",
+                        restored.seq, restored.bytes
+                    ),
+                    modified: true,
+                })
+            }
+            None => {
+                let snaps = self.undo.list()?;
+                if snaps.is_empty() {
+                    return Ok(ToolResult {
+                        ok: true,
+                        text: "no snapshots".to_string(),
+                        modified: false,
+                    });
+                }
+                let text = snaps
+                    .iter()
+                    .map(|s| format!("{}  {}  ({} bytes)", s.seq, s.rel, s.bytes))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Ok(ToolResult {
+                    ok: true,
+                    text,
+                    modified: false,
+                })
+            }
+        }
+    }
+
+    /// The undo journal is agent-internal state; the model must not write
+    /// into it (that would let it forge snapshots).
+    fn reject_undo_path(&self, rel: &str) -> Result<()> {
+        if rel == UNDO_DIR_NAME
+            || rel
+                .strip_prefix(UNDO_DIR_NAME)
+                .is_some_and(|rest| rest.starts_with('/'))
+        {
+            return Err(Error::InvalidInput(format!(
+                "refusing to write into {UNDO_DIR_NAME}/ (agent-internal)"
+            )));
+        }
+        Ok(())
+    }
+
+    fn list_dir(&self, rel: &str) -> Result<ToolResult> {
         let path = if rel.is_empty() {
             self.root.clone()
         } else {
@@ -184,6 +357,9 @@ impl Tools {
         for entry in std::fs::read_dir(&path)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
+            if name == UNDO_DIR_NAME {
+                continue;
+            }
             let kind = entry
                 .file_type()
                 .map(|t| if t.is_dir() { "dir" } else { "file" })
@@ -191,18 +367,28 @@ impl Tools {
             entries.push(format!("{kind}\t{name}"));
         }
         entries.sort();
-        if entries.is_empty() {
-            return Ok(format!("(empty dir: {rel})"));
-        }
-        Ok(entries.join("\n"))
+        let text = if entries.is_empty() {
+            format!("(empty dir: {rel})")
+        } else {
+            entries.join("\n")
+        };
+        Ok(ToolResult {
+            ok: true,
+            text,
+            modified: false,
+        })
     }
 
-    fn run_command(&self, cmd: &str) -> Result<String> {
+    fn run_command(&self, cmd: &str) -> Result<ToolResult> {
         let output = run_with_timeout(cmd, &self.root, CMD_TIMEOUT)?;
-        Ok(render_command_output(cmd, &output))
+        Ok(ToolResult {
+            ok: true,
+            text: render_command_output(cmd, &output),
+            modified: false,
+        })
     }
 
-    fn search(&self, needle: &str, rel: &str) -> Result<String> {
+    fn search(&self, needle: &str, rel: &str) -> Result<ToolResult> {
         let path = if rel.is_empty() {
             self.root.clone()
         } else {
@@ -216,10 +402,7 @@ impl Tools {
             let text = std::fs::read_to_string(file).unwrap_or_default();
             for (idx, line) in text.lines().enumerate() {
                 if line.contains(needle) {
-                    let rel_path = file
-                        .strip_prefix(&self.root)
-                        .unwrap_or(file)
-                        .display();
+                    let rel_path = file.strip_prefix(&self.root).unwrap_or(file).display();
                     matches.push(format!("{rel_path}:{}:{line}", idx + 1));
                     if matches.len() >= 200 {
                         break;
@@ -228,10 +411,16 @@ impl Tools {
             }
             Ok(())
         })?;
-        if matches.is_empty() {
-            return Ok(format!("no matches for {needle:?} under {rel}"));
-        }
-        Ok(matches.join("\n"))
+        let text = if matches.is_empty() {
+            format!("no matches for {needle:?} under {rel}")
+        } else {
+            matches.join("\n")
+        };
+        Ok(ToolResult {
+            ok: true,
+            text,
+            modified: false,
+        })
     }
 }
 
@@ -243,7 +432,8 @@ fn walk(root: &Path, f: &mut dyn FnMut(&Path) -> Result<()>) -> Result<()> {
         let is_dir = entry.file_type()?.is_dir();
         if is_dir {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name == ".git" || name == "target" || name == "node_modules" {
+            if name == ".git" || name == "target" || name == "node_modules" || name == UNDO_DIR_NAME
+            {
                 continue;
             }
             walk(&path, f)?;
@@ -266,7 +456,11 @@ fn run_with_timeout(cmd: &str, cwd: &Path, timeout: Duration) -> Result<CommandO
 
     let (mut stdout, mut stderr) = match (child.stdout.take(), child.stderr.take()) {
         (Some(o), Some(e)) => (o, e),
-        _ => return Err(Error::InvalidInput("failed to capture command pipes".to_string())),
+        _ => {
+            return Err(Error::InvalidInput(
+                "failed to capture command pipes".to_string(),
+            ));
+        }
     };
 
     let reader_stdout = std::thread::spawn(move || {
@@ -331,7 +525,10 @@ fn run_with_timeout(cmd: &str, cwd: &Path, timeout: Duration) -> Result<CommandO
 }
 
 /// Wait for `child` with a deadline; returns `None` on timeout.
-fn wait_with_timeout(child: &mut std::process::Child, timeout: Duration) -> Option<std::process::ExitStatus> {
+fn wait_with_timeout(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> Option<std::process::ExitStatus> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
         if let Some(status) = child.try_wait().ok().flatten() {
@@ -391,11 +588,20 @@ mod tests {
     fn read_write_round_trip() {
         let root = temp_root("rw");
         let tools = Tools::new(root.clone());
-        let res = tools.call("write_file", &serde_json::json!({"path": "a/b.txt", "content": "hello"})).unwrap();
+        let res = tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "a/b.txt", "content": "hello"}),
+            )
+            .unwrap();
         assert!(res.ok);
+        assert!(res.modified);
         assert!(res.text.contains("wrote 5 bytes"));
-        let res = tools.call("read_file", &serde_json::json!({"path": "a/b.txt"})).unwrap();
+        let res = tools
+            .call("read_file", &serde_json::json!({"path": "a/b.txt"}))
+            .unwrap();
         assert!(res.text.contains("hello"));
+        assert!(!res.modified);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -416,7 +622,9 @@ mod tests {
         std::fs::write(root.join("b.txt"), "x").unwrap();
         std::fs::write(root.join("a.txt"), "y").unwrap();
         let tools = Tools::new(root.clone());
-        let res = tools.call("list_dir", &serde_json::json!({"path": ""})).unwrap();
+        let res = tools
+            .call("list_dir", &serde_json::json!({"path": ""}))
+            .unwrap();
         assert!(res.text.contains("file\ta.txt"));
         assert!(res.text.contains("file\tb.txt"));
         assert!(res.text.find("a.txt").unwrap() < res.text.find("b.txt").unwrap());
@@ -427,10 +635,14 @@ mod tests {
     fn run_command_ok_and_fail() {
         let root = temp_root("cmd");
         let tools = Tools::new(root.clone());
-        let res = tools.call("run_command", &serde_json::json!({"cmd": "echo hi"})).unwrap();
+        let res = tools
+            .call("run_command", &serde_json::json!({"cmd": "echo hi"}))
+            .unwrap();
         assert!(res.text.contains("hi"));
         assert!(res.text.contains("[exit 0]"));
-        let res = tools.call("run_command", &serde_json::json!({"cmd": "false"})).unwrap();
+        let res = tools
+            .call("run_command", &serde_json::json!({"cmd": "false"}))
+            .unwrap();
         assert!(res.text.contains("[exit 1]"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -442,9 +654,16 @@ mod tests {
         std::fs::write(root.join("src/main.rs"), "fn main() { aether_run(); }\n").unwrap();
         std::fs::write(root.join("README.md"), "no matches here\n").unwrap();
         let tools = Tools::new(root.clone());
-        let res = tools.call("search", &serde_json::json!({"needle": "aether_run", "path": ""})).unwrap();
+        let res = tools
+            .call(
+                "search",
+                &serde_json::json!({"needle": "aether_run", "path": ""}),
+            )
+            .unwrap();
         assert!(res.text.contains("src/main.rs:1"));
-        let res = tools.call("search", &serde_json::json!({"needle": "zzz", "path": ""})).unwrap();
+        let res = tools
+            .call("search", &serde_json::json!({"needle": "zzz", "path": ""}))
+            .unwrap();
         assert!(res.text.contains("no matches"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -455,6 +674,187 @@ mod tests {
         let tools = Tools::new(root.clone());
         let res = tools.call("rm_rf", &serde_json::json!({}));
         assert!(res.is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_then_undo_restores_previous_content() {
+        let root = temp_root("undo");
+        let tools = Tools::new(root.clone());
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v1"}),
+            )
+            .unwrap();
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v2"}),
+            )
+            .unwrap();
+        let res = tools
+            .call("undo", &serde_json::json!({"file": "f.txt"}))
+            .unwrap();
+        assert!(res.ok);
+        assert!(res.modified);
+        assert!(res.text.contains("restored f.txt"));
+        let res = tools
+            .call("read_file", &serde_json::json!({"path": "f.txt"}))
+            .unwrap();
+        assert!(res.text.contains("v1"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn undo_lists_snapshots() {
+        let root = temp_root("undolist");
+        let tools = Tools::new(root.clone());
+        std::fs::write(root.join("f.txt"), "v0").unwrap();
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v1"}),
+            )
+            .unwrap();
+        let res = tools.call("undo", &serde_json::json!({})).unwrap();
+        assert!(res.ok);
+        assert!(!res.modified);
+        assert!(res.text.contains("f.txt"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn undo_rejects_out_of_sandbox_paths() {
+        let root = temp_root("undoescape");
+        let tools = Tools::new(root.clone());
+        std::fs::write(root.join("f.txt"), "v0").unwrap();
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v1"}),
+            )
+            .unwrap();
+        for bad in ["../etc/passwd", "/etc/passwd", "a/../../b"] {
+            let res = tools.call("undo", &serde_json::json!({"file": bad}));
+            assert!(res.is_err(), "expected rejection for {bad:?}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn undo_dir_hidden_from_list_and_search() {
+        let root = temp_root("hidden");
+        let tools = Tools::new(root.clone());
+        std::fs::write(root.join("f.txt"), "v0").unwrap();
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v1"}),
+            )
+            .unwrap();
+        // Snapshots were persisted.
+        assert!(root.join(".aether-undo").is_dir());
+        // ...but the model cannot see the journal.
+        let res = tools
+            .call("list_dir", &serde_json::json!({"path": ""}))
+            .unwrap();
+        assert!(!res.text.contains(".aether-undo"));
+        let res = tools
+            .call("search", &serde_json::json!({"needle": "v0", "path": ""}))
+            .unwrap();
+        assert!(!res.text.contains(".aether-undo"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cannot_write_into_undo_dir() {
+        let root = temp_root("guard");
+        let tools = Tools::new(root.clone());
+        let res = tools.call(
+            "write_file",
+            &serde_json::json!({"path": ".aether-undo/0001.snap", "content": "x"}),
+        );
+        assert!(res.is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Deterministic core of the confirm gate: Prompt + non-TTY => refuse.
+    #[test]
+    fn confirm_gate_refuses_when_not_tty() {
+        // In a normal test run stdin is not a TTY, so this exercises the
+        // real refusal path. If a harness attaches a TTY we skip rather
+        // than block on read_line.
+        if std::io::stdin().is_terminal() {
+            eprintln!("skipping: stdin is a TTY in this environment");
+            return;
+        }
+        let root = temp_root("confirm");
+        std::fs::write(root.join("f.txt"), "old content").unwrap();
+        let tools = Tools::new(root.clone()).with_confirm(true);
+        let res = tools.call(
+            "write_file",
+            &serde_json::json!({"path": "f.txt", "content": "new content"}),
+        );
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(
+            err.contains("refusing to write f.txt"),
+            "unexpected error: {err}"
+        );
+        // File untouched.
+        assert_eq!(
+            std::fs::read_to_string(root.join("f.txt")).unwrap(),
+            "old content"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// --yes (AutoApprove) writes without a TTY.
+    #[test]
+    fn yes_flag_writes_without_tty() {
+        let root = temp_root("yes");
+        std::fs::write(root.join("f.txt"), "old").unwrap();
+        let tools = Tools::new(root.clone()).with_yes();
+        let res = tools.call(
+            "write_file",
+            &serde_json::json!({"path": "f.txt", "content": "new"}),
+        );
+        assert!(res.is_ok());
+        assert_eq!(std::fs::read_to_string(root.join("f.txt")).unwrap(), "new");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_snapshots_before_overwrite() {
+        let root = temp_root("snap");
+        let tools = Tools::new(root.clone());
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v1"}),
+            )
+            .unwrap();
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v2"}),
+            )
+            .unwrap();
+        tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "v3"}),
+            )
+            .unwrap();
+        let res = tools
+            .call("undo", &serde_json::json!({"file": "f.txt"}))
+            .unwrap();
+        assert!(res.text.contains("restored f.txt"));
+        let res = tools
+            .call("read_file", &serde_json::json!({"path": "f.txt"}))
+            .unwrap();
+        assert!(res.text.contains("v2"), "expected v2, got: {}", res.text);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

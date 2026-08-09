@@ -44,9 +44,9 @@ pub fn parse_verdict(text: &str) -> Result<Verdict> {
         )),
         "continue" => Ok(Verdict::Continue(reply.feedback)),
         "revise" => {
-            let plan = reply
-                .revised_plan
-                .ok_or_else(|| Error::InvalidInput("revise verdict missing revised_plan".to_string()))?;
+            let plan = reply.revised_plan.ok_or_else(|| {
+                Error::InvalidInput("revise verdict missing revised_plan".to_string())
+            })?;
             if plan.steps.is_empty() {
                 return Err(Error::InvalidInput("revised plan has no steps".to_string()));
             }

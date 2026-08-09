@@ -12,8 +12,8 @@ pub mod render;
 use std::time::Duration;
 
 use crossterm::event::{
-    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
-    DisableMouseCapture, EnableMouseCapture,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEventKind,
 };
 use futures::StreamExt;
 use ratatui::{
@@ -167,7 +167,9 @@ impl RatatuiTui {
     }
 
     fn selected_session(&self) -> Option<&aether_session::SessionSummary> {
-        self.list_state.selected().and_then(|i| self.sessions.get(i))
+        self.list_state
+            .selected()
+            .and_then(|i| self.sessions.get(i))
     }
 
     /// Open the selected session and load its transcript.
@@ -182,9 +184,14 @@ impl RatatuiTui {
             .map_err(|e| TuiError::Session(e.to_string()))?
             .into_iter()
             .filter(|m| m.role == "user" || m.role == "assistant")
-            .map(|m| ChatRow { role: m.role, content: m.content })
+            .map(|m| ChatRow {
+                role: m.role,
+                content: m.content,
+            })
             .collect();
-        let stats = session.stats().map_err(|e| TuiError::Session(e.to_string()))?;
+        let stats = session
+            .stats()
+            .map_err(|e| TuiError::Session(e.to_string()))?;
         self.input_tokens = stats.input_tokens;
         self.output_tokens = stats.output_tokens;
         self.chat_scroll = 0;
@@ -249,9 +256,17 @@ impl RatatuiTui {
         let mut history: Vec<ChatMessage> = self
             .chat
             .iter()
-            .map(|r| ChatMessage { role: r.role.clone(), content: r.content.clone(), ..ChatMessage::default() })
+            .map(|r| ChatMessage {
+                role: r.role.clone(),
+                content: r.content.clone(),
+                ..ChatMessage::default()
+            })
             .collect();
-        history.push(ChatMessage { role: "user".to_string(), content: question.clone(), ..ChatMessage::default() });
+        history.push(ChatMessage {
+            role: "user".to_string(),
+            content: question.clone(),
+            ..ChatMessage::default()
+        });
 
         let request = ChatRequest {
             model: model.to_string(),
@@ -302,8 +317,14 @@ impl RatatuiTui {
                 self.output_tokens += output;
             }
         }
-        self.chat.push(ChatRow { role: "user".to_string(), content: question });
-        self.chat.push(ChatRow { role: "assistant".to_string(), content: reply });
+        self.chat.push(ChatRow {
+            role: "user".to_string(),
+            content: question,
+        });
+        self.chat.push(ChatRow {
+            role: "assistant".to_string(),
+            content: reply,
+        });
         self.chat_scroll = self.chat.len().saturating_sub(1);
         Ok(())
     }
@@ -311,16 +332,14 @@ impl RatatuiTui {
     /// Drive one event and return `true` to quit.
     async fn handle_event(&mut self, event: Event) -> Result<bool, TuiError> {
         match event {
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                match self.on_key(key) {
-                    KeyAction::Continue => Ok(false),
-                    KeyAction::Quit => Ok(true),
-                    KeyAction::SendTurn { question, model } => {
-                        self.send_turn(question, &model).await?;
-                        Ok(false)
-                    }
+            Event::Key(key) if key.kind == KeyEventKind::Press => match self.on_key(key) {
+                KeyAction::Continue => Ok(false),
+                KeyAction::Quit => Ok(true),
+                KeyAction::SendTurn { question, model } => {
+                    self.send_turn(question, &model).await?;
+                    Ok(false)
                 }
-            }
+            },
             Event::Mouse(me) => self.on_mouse(me),
             Event::Resize(_, _) => Ok(false),
             _ => Ok(false),
@@ -347,7 +366,8 @@ impl RatatuiTui {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => KeyAction::Quit,
             KeyCode::Char('j') | KeyCode::Down => {
-                self.list_scroll = (self.list_scroll + 1).min(self.sessions.len().saturating_sub(1));
+                self.list_scroll =
+                    (self.list_scroll + 1).min(self.sessions.len().saturating_sub(1));
                 self.list_state.select(Some(self.list_scroll));
                 KeyAction::Continue
             }
@@ -435,7 +455,10 @@ impl RatatuiTui {
                 }
                 // Re-ask the last user question against the newly selected model.
                 match self.last_question() {
-                    Some(q) => KeyAction::SendTurn { question: q.to_string(), model },
+                    Some(q) => KeyAction::SendTurn {
+                        question: q.to_string(),
+                        model,
+                    },
                     None => KeyAction::Continue,
                 }
             }
@@ -444,15 +467,19 @@ impl RatatuiTui {
     }
 
     fn last_question(&self) -> Option<&str> {
-        self.chat.iter().rev().find(|r| r.role == "user").map(|r| r.content.as_str())
+        self.chat
+            .iter()
+            .rev()
+            .find(|r| r.role == "user")
+            .map(|r| r.content.as_str())
     }
 
     fn on_mouse(&mut self, me: crossterm::event::MouseEvent) -> Result<bool, TuiError> {
         match me.kind {
             MouseEventKind::ScrollDown => match self.screen {
                 Screen::Sessions => {
-                    self.list_scroll = (self.list_scroll + 1)
-                        .min(self.sessions.len().saturating_sub(1));
+                    self.list_scroll =
+                        (self.list_scroll + 1).min(self.sessions.len().saturating_sub(1));
                     self.list_state.select(Some(self.list_scroll));
                     Ok(false)
                 }
@@ -504,7 +531,9 @@ impl RatatuiTui {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 title,
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))),
             title_area,
         );
@@ -560,7 +589,9 @@ impl RatatuiTui {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 format!(" {title} "),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))),
             title_area,
         );
@@ -581,7 +612,9 @@ impl RatatuiTui {
             rows.push(Line::from(vec![
                 Span::styled(
                     "ai  ",
-                    Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(tail.clone()),
             ]));
@@ -591,11 +624,7 @@ impl RatatuiTui {
             .wrap(Wrap { trim: false });
         frame.render_widget(body, body_area);
 
-        let usage = render::usage_summary(
-            Some(self.input_tokens),
-            Some(self.output_tokens),
-            None,
-        );
+        let usage = render::usage_summary(Some(self.input_tokens), Some(self.output_tokens), None);
         let hint = if self.pending.is_some() {
             "streaming…"
         } else {
@@ -617,11 +646,15 @@ impl RatatuiTui {
         let prefix = match role.as_str() {
             "user" => Span::styled(
                 "you ",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             ),
             _ => Span::styled(
                 "ai  ",
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
             ),
         };
         Line::from(vec![prefix, Span::raw(content)])
@@ -641,7 +674,11 @@ impl RatatuiTui {
             .map(|m| ListItem::new(m.clone()))
             .collect();
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(" ctrl+P — model "))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" ctrl+P — model "),
+            )
             .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
         let mut state = ListState::default();
         state.select(Some(self.palette_index));
@@ -741,8 +778,14 @@ mod tests {
     fn chat_scroll_stays_in_range() {
         let mut app = RatatuiTui {
             chat: vec![
-                ChatRow { role: "user".into(), content: "hi".into() },
-                ChatRow { role: "assistant".into(), content: "hello".into() },
+                ChatRow {
+                    role: "user".into(),
+                    content: "hi".into(),
+                },
+                ChatRow {
+                    role: "assistant".into(),
+                    content: "hello".into(),
+                },
             ],
             ..Default::default()
         };
@@ -758,7 +801,10 @@ mod tests {
 
     #[test]
     fn ctrl_p_opens_and_closes_palette() {
-        let mut app = RatatuiTui { screen: Screen::Chat, ..Default::default() };
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
         let ctrl_p = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
         let _ = app.on_key(ctrl_p);
         assert_eq!(app.screen, Screen::Palette);
@@ -770,7 +816,10 @@ mod tests {
     fn palette_enter_asks_last_question() {
         let mut app = RatatuiTui {
             screen: Screen::Palette,
-            chat: vec![ChatRow { role: "user".into(), content: "why?".into() }],
+            chat: vec![ChatRow {
+                role: "user".into(),
+                content: "why?".into(),
+            }],
             palette_models: vec!["m1".into(), "m2".into()],
             palette_index: 1,
             ..Default::default()
@@ -778,7 +827,10 @@ mod tests {
         let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(
             action,
-            KeyAction::SendTurn { question: "why?".into(), model: "m2".into() }
+            KeyAction::SendTurn {
+                question: "why?".into(),
+                model: "m2".into()
+            }
         );
         assert_eq!(app.screen, Screen::Chat);
     }

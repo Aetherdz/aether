@@ -8,8 +8,6 @@ pub mod error;
 pub mod fs;
 pub mod prompt;
 
-pub use config::{
-    AetherConfig, CustomProviderConfig, Providers, DEFAULT_MODEL, DEFAULT_PROVIDER,
-};
-pub use error::{redact_secret, Error, Result};
+pub use config::{AetherConfig, CustomProviderConfig, DEFAULT_MODEL, DEFAULT_PROVIDER, Providers};
+pub use error::{Error, Result, redact_secret};
 pub use prompt::{Prompt, SYSTEM_PROMPT};

@@ -64,7 +64,10 @@ pub fn parse_plan(text: &str) -> Result<Plan> {
     }
     for step in &plan.steps {
         if step.action.trim().is_empty() {
-            return Err(Error::InvalidInput(format!("step {} has no action", step.id)));
+            return Err(Error::InvalidInput(format!(
+                "step {} has no action",
+                step.id
+            )));
         }
     }
     Ok(plan)

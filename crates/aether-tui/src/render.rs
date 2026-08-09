@@ -72,7 +72,10 @@ pub fn boxed(title: Option<&str>, lines: &[String], width: usize) -> Vec<String>
             let dashes = inner.saturating_sub(visible_length(&padded));
             let left = dashes / 2;
             let right = dashes - left;
-            out.push(format!("┌{}┐", line('─', left) + &padded + &line('─', right)));
+            out.push(format!(
+                "┌{}┐",
+                line('─', left) + &padded + &line('─', right)
+            ));
         }
         None => out.push(format!("┌{}┐", line('─', inner))),
     }
@@ -86,7 +89,12 @@ pub fn boxed(title: Option<&str>, lines: &[String], width: usize) -> Vec<String>
             l.clone()
         };
         let pad = inner.saturating_sub(visible_length(&padded));
-        out.push(format!("│{} {} {}│", " ".repeat(PAD), padded, " ".repeat(pad)));
+        out.push(format!(
+            "│{} {} {}│",
+            " ".repeat(PAD),
+            padded,
+            " ".repeat(pad)
+        ));
     }
     out.push(format!("└{}┘", line('─', inner)));
     out
@@ -165,7 +173,10 @@ mod tests {
 
     #[test]
     fn usage_summary_renders_only_known_parts() {
-        assert_eq!(usage_summary(Some(10), Some(5), None), "tokens: 10 in  5 out");
+        assert_eq!(
+            usage_summary(Some(10), Some(5), None),
+            "tokens: 10 in  5 out"
+        );
         assert_eq!(usage_summary(None, None, None), "");
     }
 }

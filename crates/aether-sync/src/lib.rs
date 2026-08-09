@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use aether_core::config::config_dir;
 use aether_core::error::{Error, Result};
 use aether_core::fs::{atomic_write, ensure_dir};
-use aether_session::{list_sessions, Session, SessionId};
+use aether_session::{Session, SessionId, list_sessions};
 use serde::{Deserialize, Serialize};
 
 /// Bundle file name inside a gist or folder (must match `sync.ts`).
@@ -365,10 +365,8 @@ fn line_timestamp(line: &str) -> i64 {
     let Some(ts) = v.get("ts").and_then(|t| t.as_str()) else {
         return 0;
     };
-    let Ok(dt) = time::OffsetDateTime::parse(
-        ts,
-        &time::format_description::well_known::Rfc3339,
-    ) else {
+    let Ok(dt) = time::OffsetDateTime::parse(ts, &time::format_description::well_known::Rfc3339)
+    else {
         return 0;
     };
     dt.unix_timestamp() * 1000 + i64::from(dt.millisecond())
@@ -387,10 +385,7 @@ mod tests {
 
     /// Point AETHER_CONFIG_DIR at a fresh temp dir (serialized: env is global).
     fn isolate(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "aether-sync-{tag}-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("aether-sync-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         unsafe { std::env::set_var("AETHER_CONFIG_DIR", &dir) };
         let sessions = dir.join("sessions");

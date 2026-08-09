@@ -14,6 +14,6 @@ pub use client::{
 };
 pub use provider::{OpenAIProvider, Pricing, Provider};
 pub use registry::{
-    fetch_zen_models, get_provider, key_is_set, key_status, list_providers, normalize_defaults,
-    resolve_default, zen_provider, KeyStatus, ResolvedModel, ZEN_BASE_URL, ZEN_MODELS_URL,
+    KeyStatus, ResolvedModel, ZEN_BASE_URL, ZEN_MODELS_URL, fetch_zen_models, get_provider,
+    key_is_set, key_status, list_providers, normalize_defaults, resolve_default, zen_provider,
 };

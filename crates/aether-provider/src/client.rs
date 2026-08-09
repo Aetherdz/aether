@@ -7,9 +7,9 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use aether_core::error::{redact_secret, Error, Result};
-use futures::stream::{self, Stream};
+use aether_core::error::{Error, Result, redact_secret};
 use futures::StreamExt;
+use futures::stream::{self, Stream};
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +33,10 @@ pub fn backoff_delay(attempt: u32, base: Duration, cap: Duration, floor: Duratio
         return floor;
     }
     let exponent = base
-        .saturating_mul(1u32.checked_shl(attempt.saturating_sub(1).min(10)).unwrap_or(u32::MAX))
+        .saturating_mul(
+            1u32.checked_shl(attempt.saturating_sub(1).min(10))
+                .unwrap_or(u32::MAX),
+        )
         .min(cap);
     let nanos = exponent.as_nanos() as u64;
     // Full jitter: uniform draw in [0, window). Deterministic for tests when
@@ -277,11 +280,9 @@ impl OpenAICompatibleClient {
     /// Run one non-streaming completion, returning the full assistant message
     /// (text and/or tool calls). Retries transient failures exactly like
     /// [`stream_chat_with_retry`].
-    pub async fn complete(
-        &self,
-        request: &ChatRequest,
-    ) -> Result<ChatCompletion> {
-        self.complete_with_retry(request, RetryPolicy::default()).await
+    pub async fn complete(&self, request: &ChatRequest) -> Result<ChatCompletion> {
+        self.complete_with_retry(request, RetryPolicy::default())
+            .await
     }
 
     /// Non-streaming completion with an explicit retry policy.
@@ -312,7 +313,10 @@ impl OpenAICompatibleClient {
     /// Send a non-streaming request and parse the JSON completion body.
     async fn try_complete(&self, request: &ChatRequest) -> Result<ChatCompletion> {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        let mut builder = self.http.post(&url).header(CONTENT_TYPE, "application/json");
+        let mut builder = self
+            .http
+            .post(&url)
+            .header(CONTENT_TYPE, "application/json");
         if let Some(key) = &self.api_key {
             builder = builder.bearer_auth(key);
         }
@@ -339,7 +343,10 @@ impl OpenAICompatibleClient {
         request: &ChatRequest,
     ) -> Result<impl Stream<Item = Result<ChatChunk>> + Send + '_> {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        let mut builder = self.http.post(&url).header(CONTENT_TYPE, "application/json");
+        let mut builder = self
+            .http
+            .post(&url)
+            .header(CONTENT_TYPE, "application/json");
         if let Some(key) = &self.api_key {
             builder = builder.bearer_auth(key);
         }
@@ -383,26 +390,29 @@ where
 {
     let parser = SseParser::new();
     let byte_stream = Box::pin(byte_stream);
-    stream::unfold((parser, byte_stream), |(mut parser, mut byte_stream)| async move {
-        loop {
-            if let Some(data) = parser.pop_event() {
-                return Some((parse_chunk(&data), (parser, byte_stream)));
-            }
-            match byte_stream.next().await {
-                Some(Ok(bytes)) => parser.push(bytes.as_ref()),
-                Some(Err(e)) => {
-                    return Some((Err(Error::Network(e.to_string())), (parser, byte_stream)));
+    stream::unfold(
+        (parser, byte_stream),
+        |(mut parser, mut byte_stream)| async move {
+            loop {
+                if let Some(data) = parser.pop_event() {
+                    return Some((parse_chunk(&data), (parser, byte_stream)));
                 }
-                None => {
-                    parser.finish();
-                    if let Some(data) = parser.pop_event() {
-                        return Some((parse_chunk(&data), (parser, byte_stream)));
+                match byte_stream.next().await {
+                    Some(Ok(bytes)) => parser.push(bytes.as_ref()),
+                    Some(Err(e)) => {
+                        return Some((Err(Error::Network(e.to_string())), (parser, byte_stream)));
                     }
-                    return None;
+                    None => {
+                        parser.finish();
+                        if let Some(data) = parser.pop_event() {
+                            return Some((parse_chunk(&data), (parser, byte_stream)));
+                        }
+                        return None;
+                    }
                 }
             }
-        }
-    })
+        },
+    )
 }
 
 /// Parse one SSE `data:` payload into a chat chunk.
@@ -413,8 +423,8 @@ fn parse_chunk(data: &str) -> Result<ChatChunk> {
             ..ChatChunk::default()
         });
     }
-    let value: serde_json::Value =
-        serde_json::from_str(data).map_err(|e| Error::Provider(format!("malformed SSE chunk: {e}")))?;
+    let value: serde_json::Value = serde_json::from_str(data)
+        .map_err(|e| Error::Provider(format!("malformed SSE chunk: {e}")))?;
     let usage = value
         .get("usage")
         .and_then(|u| serde_json::from_value::<Usage>(u.clone()).ok());
@@ -424,7 +434,10 @@ fn parse_chunk(data: &str) -> Result<ChatChunk> {
         .and_then(|c| c.first())
     else {
         // Usage-only or empty chunk; nothing to emit.
-        return Ok(ChatChunk { usage, ..ChatChunk::default() });
+        return Ok(ChatChunk {
+            usage,
+            ..ChatChunk::default()
+        });
     };
     let content = choice
         .get("delta")
@@ -518,11 +531,7 @@ fn parse_sse_event(event: &[u8]) -> Option<String> {
         }
         data.push_str(rest);
     }
-    if data.is_empty() {
-        None
-    } else {
-        Some(data)
-    }
+    if data.is_empty() { None } else { Some(data) }
 }
 
 #[cfg(test)]
@@ -610,11 +619,19 @@ mod tests {
     #[test]
     fn retryable_error_classification() {
         assert!(retryable_error(&Error::Network("conn reset".into())));
-        assert!(retryable_error(&Error::Provider("HTTP 429: slow down".into())));
-        assert!(retryable_error(&Error::Provider("HTTP 503: unavailable".into())));
+        assert!(retryable_error(&Error::Provider(
+            "HTTP 429: slow down".into()
+        )));
+        assert!(retryable_error(&Error::Provider(
+            "HTTP 503: unavailable".into()
+        )));
         assert!(!retryable_error(&Error::Provider("HTTP 401: nope".into())));
-        assert!(!retryable_error(&Error::Provider("HTTP 400: bad req".into())));
-        assert!(!retryable_error(&Error::Provider("malformed SSE chunk: x".into())));
+        assert!(!retryable_error(&Error::Provider(
+            "HTTP 400: bad req".into()
+        )));
+        assert!(!retryable_error(&Error::Provider(
+            "malformed SSE chunk: x".into()
+        )));
         assert!(!retryable_error(&Error::InvalidInput("nope".into())));
     }
 
@@ -632,7 +649,10 @@ mod tests {
         }
         for _ in 0..64 {
             let d = backoff_delay(20, base, cap, floor);
-            assert!(d >= floor && d <= cap, "saturated attempt out of bounds: {d:?}");
+            assert!(
+                d >= floor && d <= cap,
+                "saturated attempt out of bounds: {d:?}"
+            );
         }
     }
 
@@ -643,7 +663,10 @@ mod tests {
         assert!(p.can_retry(1));
         assert!(p.can_retry(2));
         assert!(!p.can_retry(3));
-        let no_retry = RetryPolicy { max_attempts: 1, ..RetryPolicy::default() };
+        let no_retry = RetryPolicy {
+            max_attempts: 1,
+            ..RetryPolicy::default()
+        };
         assert!(!no_retry.can_retry(1));
     }
 
@@ -654,7 +677,9 @@ mod tests {
             function: ToolFunction {
                 name: "read_file".to_string(),
                 description: "Read a file".to_string(),
-                parameters: Some(serde_json::json!({"type": "object", "properties": {"path": {"type": "string"}}})),
+                parameters: Some(
+                    serde_json::json!({"type": "object", "properties": {"path": {"type": "string"}}}),
+                ),
             },
         };
         let req = ChatRequest {
@@ -673,10 +698,7 @@ mod tests {
         assert_eq!(json["tools"][0]["function"]["name"], "read_file");
         assert!(json["tools"][0]["function"]["parameters"].is_object());
 
-        let plain = ChatRequest {
-            tools: None,
-            ..req
-        };
+        let plain = ChatRequest { tools: None, ..req };
         let json = serde_json::to_value(&plain).unwrap();
         assert!(json.get("tools").is_none());
     }
@@ -707,7 +729,10 @@ mod tests {
             ..ChatMessage::default()
         };
         let json = serde_json::to_value(&assistant).unwrap();
-        assert!(json.get("content").is_none(), "empty content must be omitted");
+        assert!(
+            json.get("content").is_none(),
+            "empty content must be omitted"
+        );
         assert_eq!(json["tool_calls"][0]["function"]["name"], "read_file");
 
         let tool_result = ChatMessage {
@@ -754,7 +779,10 @@ mod tests {
         let raw = r#"{"choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#;
         let completion: ChatCompletion = serde_json::from_str(raw).unwrap();
         assert!(completion.choices[0].message.tool_calls.is_none());
-        assert_eq!(completion.choices[0].message.content.as_deref(), Some("done"));
+        assert_eq!(
+            completion.choices[0].message.content.as_deref(),
+            Some("done")
+        );
         assert_eq!(completion.choices[0].finish_reason.as_deref(), Some("stop"));
     }
 }

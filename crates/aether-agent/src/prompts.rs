@@ -15,8 +15,11 @@ Rules:
 
 pub const BUILD_SYSTEM: &str = r#"You are the builder of a 3-model coding agent.
 You receive the plan and a conversation of tool results.
-Execute the plan by calling tools (read_file, write_file, list_dir, run_command, search).
+Execute the plan by calling tools (read_file, write_file, list_dir, run_command, search, undo).
 Call one tool per turn; inspect its result before the next call.
+write_file shows a diff preview and may require confirmation; a refused write
+means the write did not happen. Use undo to restore a file to its previous
+content after a bad write.
 When all steps are done, reply with ONLY your final summary text (no tool calls, no JSON)."#;
 
 pub const ROUTE_SYSTEM: &str = r#"You are the router of a 3-model coding agent.

@@ -8,16 +8,18 @@
 //! client (no network). Tool calls are consumed natively when the provider
 //! returns `tool_calls`; otherwise the build reply is scanned for fenced
 //! JSON tool invocations (provider-agnostic fallback).
+//!
+//! Safety: the loop stops early when it detects stagnation — two consecutive
+//! iterations where the plan did not change AND no tool call modified the
+//! filesystem — and reports why it stopped via [`AgentStopReason`].
 
 use aether_core::error::{Error, Result};
-use aether_provider::{
-    ChatCompletion, ChatMessage, ChatRequest, ToolCall, ToolDef,
-};
+use aether_provider::{ChatCompletion, ChatMessage, ChatRequest, ToolCall, ToolDef};
 use serde_json::Value;
 
-use crate::plan::{extract_json_object, parse_plan, Plan};
-use crate::prompts::{build_system_with_tools, render_plan, PLAN_SYSTEM, ROUTE_SYSTEM};
-use crate::route::{parse_verdict, Verdict};
+use crate::plan::{Plan, extract_json_object, parse_plan};
+use crate::prompts::{PLAN_SYSTEM, ROUTE_SYSTEM, build_system_with_tools, render_plan};
+use crate::route::{Verdict, parse_verdict};
 use crate::tools::Tools;
 
 /// Anything that can run a non-streaming completion.
@@ -33,6 +35,19 @@ impl Completions for aether_provider::OpenAICompatibleClient {
     }
 }
 
+/// Why an agent run ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentStopReason {
+    /// The router said done.
+    Done,
+    /// `max_iterations` was reached.
+    IterationCap,
+    /// Two consecutive iterations with no observable progress.
+    Stagnation,
+    /// The build model exhausted its per-iteration tool budget.
+    BuildTurnCap,
+}
+
 /// Outcome of one full agent run.
 #[derive(Debug, Clone)]
 pub struct AgentResult {
@@ -40,6 +55,7 @@ pub struct AgentResult {
     pub iterations: u32,
     pub tool_calls: u32,
     pub final_answer: String,
+    pub stopped_reason: AgentStopReason,
 }
 
 /// The 3-model agent. Each role can use a different model id.
@@ -91,18 +107,65 @@ impl Agent {
         self
     }
 
+    /// Enable/disable the `write_file` confirmation gate (see [`Tools::with_confirm`]).
+    pub fn with_confirm(mut self, enabled: bool) -> Self {
+        self.tools = self.tools.with_confirm(enabled);
+        self
+    }
+
+    /// Auto-approve all `write_file` calls (non-interactive `--yes`).
+    pub fn with_yes(mut self) -> Self {
+        self.tools = self.tools.with_yes();
+        self
+    }
+
     /// Run the loop on `task` until the router says done or caps are hit.
     pub async fn run(&self, task: &str) -> Result<AgentResult> {
-        let plan = self.plan(task).await?;
-        let mut plan = plan;
+        let mut plan = self.plan(task).await?;
         let mut history: Vec<ChatMessage> = Vec::new();
         let mut tool_calls: u32 = 0;
         let mut final_answer = String::new();
+        let mut prev_plan: Option<Plan> = None;
+        let mut stagnant_streak: u32 = 0;
 
         for iteration in 1..=self.max_iterations {
             let build = self.build_round(task, &plan, &history).await?;
             tool_calls += build.tool_calls;
             final_answer = build.summary.clone();
+
+            // The build model spent its whole tool budget without producing
+            // a summary — there is nothing more to route on.
+            if build.capped {
+                return Ok(AgentResult {
+                    plan,
+                    iterations: iteration,
+                    tool_calls,
+                    final_answer,
+                    stopped_reason: AgentStopReason::BuildTurnCap,
+                });
+            }
+
+            // Stagnation detection: no observable progress means the plan is
+            // identical to the previous iteration AND no tool call modified
+            // any file this iteration. Two consecutive stagnant iterations
+            // stop the loop early.
+            let plan_unchanged = prev_plan.as_ref() == Some(&plan);
+            let no_files_modified = !build.modified;
+            if plan_unchanged && no_files_modified {
+                stagnant_streak += 1;
+            } else {
+                stagnant_streak = 0;
+            }
+            if stagnant_streak >= 2 {
+                return Ok(AgentResult {
+                    plan,
+                    iterations: iteration,
+                    tool_calls,
+                    final_answer,
+                    stopped_reason: AgentStopReason::Stagnation,
+                });
+            }
+            prev_plan = Some(plan.clone());
 
             let verdict = self.route(task, &plan, &build.summary, &history).await?;
             match verdict {
@@ -116,6 +179,7 @@ impl Agent {
                         } else {
                             answer
                         },
+                        stopped_reason: AgentStopReason::Done,
                     });
                 }
                 Verdict::Continue(feedback) => {
@@ -128,7 +192,10 @@ impl Agent {
                 Verdict::Revise(new_plan, feedback) => {
                     history.push(ChatMessage {
                         role: "user".to_string(),
-                        content: format!("Revise plan: {feedback}\nNew plan:\n{}", render_plan(&new_plan)),
+                        content: format!(
+                            "Revise plan: {feedback}\nNew plan:\n{}",
+                            render_plan(&new_plan)
+                        ),
                         ..ChatMessage::default()
                     });
                     plan = new_plan;
@@ -141,6 +208,7 @@ impl Agent {
             iterations: self.max_iterations,
             tool_calls,
             final_answer,
+            stopped_reason: AgentStopReason::IterationCap,
         })
     }
 
@@ -148,10 +216,7 @@ impl Agent {
     async fn plan(&self, task: &str) -> Result<Plan> {
         let request = self.request(
             &self.plan_model,
-            vec![
-                system(PLAN_SYSTEM),
-                user(task),
-            ],
+            vec![system(PLAN_SYSTEM), user(task)],
             None,
         );
         let reply = self.client.complete(&request).await?;
@@ -179,10 +244,12 @@ impl Agent {
 
         let tool_defs = Tools::defs();
         let mut round_tool_calls: u32 = 0;
+        let mut round_modified: bool = false;
         let mut summary = String::new();
 
         for _ in 0..self.max_build_turns {
-            let request = self.request(&self.build_model, messages.clone(), Some(tool_defs.clone()));
+            let request =
+                self.request(&self.build_model, messages.clone(), Some(tool_defs.clone()));
             let reply = self.client.complete(&request).await?;
 
             let native = reply
@@ -193,8 +260,9 @@ impl Agent {
 
             if !native.is_empty() {
                 for call in &native {
-                    let result = self.execute_tool_call(call).await;
+                    let (result, modified) = self.execute_tool_call(call).await;
                     round_tool_calls += 1;
+                    round_modified |= modified;
                     messages.push(assistant_tool_calls(vec![call.clone()]));
                     messages.push(tool_result(&call.id, &result));
                 }
@@ -205,12 +273,12 @@ impl Agent {
             let fenced = extract_fenced_calls(&text)?;
             if !fenced.is_empty() {
                 for call in fenced {
-                    let result = self.tools.call(&call.tool, &call.args).map(|r| r.text);
-                    let result = match result {
-                        Ok(t) => t,
-                        Err(e) => e.to_string(),
+                    let (result, modified) = match self.tools.call(&call.tool, &call.args) {
+                        Ok(r) => (r.text, r.modified),
+                        Err(e) => (e.to_string(), false),
                     };
                     round_tool_calls += 1;
+                    round_modified |= modified;
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
                         content: text.clone(),
@@ -230,18 +298,21 @@ impl Agent {
             break;
         }
 
+        let capped = summary.is_empty();
         Ok(BuildRound {
             summary,
             tool_calls: round_tool_calls,
+            modified: round_modified,
+            // If the loop ran out of turns, summary was never set.
+            capped,
         })
     }
 
-    async fn execute_tool_call(&self, call: &ToolCall) -> String {
-        let args: Value = serde_json::from_str(&call.function.arguments)
-            .unwrap_or(Value::Null);
+    async fn execute_tool_call(&self, call: &ToolCall) -> (String, bool) {
+        let args: Value = serde_json::from_str(&call.function.arguments).unwrap_or(Value::Null);
         match self.tools.call(&call.function.name, &args) {
-            Ok(r) => r.text,
-            Err(e) => e.to_string(),
+            Ok(r) => (r.text, r.modified),
+            Err(e) => (e.to_string(), false),
         }
     }
 
@@ -264,9 +335,8 @@ impl Agent {
         let request = self.request(&self.route_model, messages.clone(), None);
         let reply = self.client.complete(&request).await?;
         let text = assistant_text(&reply);
-        parse_verdict(&text).map_err(|_| {
-            Error::InvalidInput(format!("router returned unparseable output: {text}"))
-        })
+        parse_verdict(&text)
+            .map_err(|_| Error::InvalidInput(format!("router returned unparseable output: {text}")))
     }
 
     fn request(
@@ -288,6 +358,8 @@ impl Agent {
 struct BuildRound {
     summary: String,
     tool_calls: u32,
+    modified: bool,
+    capped: bool,
 }
 
 fn system(content: &str) -> ChatMessage {
@@ -471,6 +543,7 @@ Done"#;
         assert_eq!(result.iterations, 1);
         assert_eq!(result.tool_calls, 1);
         assert_eq!(result.final_answer, "hello world");
+        assert_eq!(result.stopped_reason, AgentStopReason::Done);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -510,8 +583,10 @@ Done"#;
             // build: no tools, plain summary
             MockClient::text("nothing yet"),
             // route: revise with plan v2
-            MockClient::text(r#"{"verdict":"revise","feedback":"read it",
-                "revised_plan":{"goal":"g","steps":[{"id":1,"action":"read a.txt"}]}}"#),
+            MockClient::text(
+                r#"{"verdict":"revise","feedback":"read it",
+                "revised_plan":{"goal":"g","steps":[{"id":1,"action":"read a.txt"}]}}"#,
+            ),
             // build: tool call
             MockClient::with_tools(vec![tool_call("c2", "read_file", r#"{"path":"a.txt"}"#)]),
             // build: summary
@@ -529,6 +604,7 @@ Done"#;
         let result = agent.run("task").await.unwrap();
         assert_eq!(result.iterations, 2);
         assert_eq!(result.final_answer, "A");
+        assert_eq!(result.stopped_reason, AgentStopReason::Done);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -553,6 +629,122 @@ Done"#;
         let result = agent.run("task").await.unwrap();
         assert_eq!(result.iterations, 2);
         assert_eq!(result.final_answer, "still working 2");
+        assert_eq!(result.stopped_reason, AgentStopReason::IterationCap);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Two consecutive iterations with an unchanged plan and no file
+    /// modifications must stop the loop with `Stagnation`.
+    #[tokio::test]
+    async fn stagnation_detected_after_two_identical_iterations() {
+        let root = temp_root("stagnate");
+        let mock = MockClient::new(vec![
+            // plan
+            MockClient::text(r#"{"goal":"g","steps":[{"id":1,"action":"work"}]}"#),
+            // iter 1: no tools, plain summary; route says continue
+            MockClient::text("working on it"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"keep going"}"#),
+            // iter 2: still no tools -> stagnant streak 1
+            MockClient::text("still working"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"keep going"}"#),
+            // iter 3: still no tools -> stagnant streak 2 -> stop
+            MockClient::text("still working again"),
+        ]);
+        let agent = Agent::new(
+            Box::new(mock),
+            root.clone(),
+            "m".to_string(),
+            "m".to_string(),
+            "m".to_string(),
+        )
+        .with_iteration_cap(6);
+        let result = agent.run("task").await.unwrap();
+        assert_eq!(result.stopped_reason, AgentStopReason::Stagnation);
+        assert_eq!(result.iterations, 3);
+        assert_eq!(result.final_answer, "still working again");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// File modifications reset the stagnation streak even when the plan
+    /// stays identical: it must take two *consecutive* stagnant iterations.
+    #[tokio::test]
+    async fn stagnation_resets_when_files_modified() {
+        let root = temp_root("stagnatereset");
+        let mock = MockClient::new(vec![
+            // plan
+            MockClient::text(r#"{"goal":"g","steps":[{"id":1,"action":"write"}]}"#),
+            // iter 1: write a file (modified) -> streak 0
+            MockClient::with_tools(vec![tool_call(
+                "c1",
+                "write_file",
+                r#"{"path":"a.txt","content":"v1"}"#,
+            )]),
+            MockClient::text("wrote a.txt"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"more"}"#),
+            // iter 2: write again (modified) -> streak 0
+            MockClient::with_tools(vec![tool_call(
+                "c2",
+                "write_file",
+                r#"{"path":"a.txt","content":"v2"}"#,
+            )]),
+            MockClient::text("wrote a.txt again"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"more"}"#),
+            // iter 3: no tools -> streak 1
+            MockClient::text("nothing to change"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"more"}"#),
+            // iter 4: no tools -> streak 2 -> Stagnation
+            MockClient::text("nothing to change again"),
+        ]);
+        let agent = Agent::new(
+            Box::new(mock),
+            root.clone(),
+            "m".to_string(),
+            "m".to_string(),
+            "m".to_string(),
+        )
+        .with_iteration_cap(6);
+        let result = agent.run("task").await.unwrap();
+        assert_eq!(result.stopped_reason, AgentStopReason::Stagnation);
+        assert_eq!(result.iterations, 4);
+        // The two writes actually landed.
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "v2");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A revised plan resets the plan-unchanged condition.
+    #[tokio::test]
+    async fn stagnation_does_not_fire_across_plan_revision() {
+        let root = temp_root("stagrevise");
+        let mock = MockClient::new(vec![
+            // plan v1
+            MockClient::text(r#"{"goal":"g","steps":[{"id":1,"action":"a"}]}"#),
+            // iter 1: no tools; route revises to plan v2
+            MockClient::text("hmm"),
+            MockClient::text(
+                r#"{"verdict":"revise","feedback":"try b",
+                "revised_plan":{"goal":"g","steps":[{"id":1,"action":"b"}]}}"#,
+            ),
+            // iter 2: plan changed -> not stagnant; route continues
+            MockClient::text("trying b"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"more"}"#),
+            // iter 3: plan unchanged now, no tools -> streak 1
+            MockClient::text("still b"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"more"}"#),
+            // iter 4: streak 2 -> Stagnation
+            MockClient::text("still b again"),
+        ]);
+        let agent = Agent::new(
+            Box::new(mock),
+            root.clone(),
+            "m".to_string(),
+            "m".to_string(),
+            "m".to_string(),
+        )
+        .with_iteration_cap(6);
+        let result = agent.run("task").await.unwrap();
+        assert_eq!(result.stopped_reason, AgentStopReason::Stagnation);
+        // Revision happened at iter 1; stagnation needs iters 3+4 unchanged.
+        assert_eq!(result.iterations, 4);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

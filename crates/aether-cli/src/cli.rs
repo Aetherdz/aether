@@ -87,6 +87,14 @@ pub enum Command {
         /// Max loop iterations before giving up
         #[arg(short, long, default_value_t = 6)]
         iterations: u32,
+        /// Auto-approve write_file changes without prompting (non-interactive)
+        #[arg(long)]
+        yes: bool,
+    },
+    /// List or restore write snapshots saved by the agent under .aether-undo/
+    Undo {
+        /// Restore this relative file to its most recent snapshot (omit to list)
+        file: Option<String>,
     },
 }
 

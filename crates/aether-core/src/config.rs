@@ -74,7 +74,7 @@ fn default_model() -> String {
 /// Resolve the config directory: `AETHER_CONFIG_DIR` override, else
 /// `~/.config/aether` via the `dirs` crate.
 pub fn config_dir() -> Result<PathBuf> {
-if let Ok(override_dir) = std::env::var("AETHER_CONFIG_DIR")
+    if let Ok(override_dir) = std::env::var("AETHER_CONFIG_DIR")
         && !override_dir.trim().is_empty()
     {
         return Ok(PathBuf::from(override_dir));
@@ -155,7 +155,9 @@ pub fn update_default(provider: &str, model: Option<&str>) -> Result<AetherConfi
 /// Normalize a raw `providers.custom` value (array, single object, or
 /// anything else) into a `Vec<CustomProviderConfig>`. Entries without a
 /// `name` or `baseURL` are dropped, matching the TS behavior.
-fn deserialize_custom_providers<'de, D>(deserializer: D) -> std::result::Result<Vec<CustomProviderConfig>, D::Error>
+fn deserialize_custom_providers<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<CustomProviderConfig>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -174,7 +176,9 @@ pub fn normalize_custom_providers(raw: &serde_json::Value) -> Vec<CustomProvider
     };
     let mut out = Vec::new();
     for entry in candidates {
-        let Some(obj) = entry.as_object() else { continue };
+        let Some(obj) = entry.as_object() else {
+            continue;
+        };
         let Some(name) = obj.get("name").and_then(serde_json::Value::as_str) else {
             continue;
         };
@@ -191,8 +195,14 @@ pub fn normalize_custom_providers(raw: &serde_json::Value) -> Vec<CustomProvider
                     .collect()
             })
             .unwrap_or_default();
-        let api_key_env = obj.get("apiKeyEnv").and_then(serde_json::Value::as_str).map(str::to_string);
-        let default_model = obj.get("defaultModel").and_then(serde_json::Value::as_str).map(str::to_string);
+        let api_key_env = obj
+            .get("apiKeyEnv")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let default_model = obj
+            .get("defaultModel")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
         out.push(CustomProviderConfig {
             name: name.to_string(),
             base_url: base_url.to_string(),
@@ -236,11 +246,7 @@ mod tests {
     fn partial_config_merges_defaults() {
         let dir = temp_dir("partial");
         fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("config.json"),
-            r#"{"defaultProvider":"openai"}"#,
-        )
-        .unwrap();
+        fs::write(dir.join("config.json"), r#"{"defaultProvider":"openai"}"#).unwrap();
         let config = load_config_from(&dir).unwrap();
         // Explicit field kept, missing field defaulted.
         assert_eq!(config.default_provider, "openai");
@@ -272,7 +278,10 @@ mod tests {
         let normalized = normalize_custom_providers(&single);
         assert_eq!(normalized.len(), 1);
         assert_eq!(normalized[0].name, "myllm");
-        assert_eq!(normalized[0].models, vec!["m1".to_string(), "m2".to_string()]);
+        assert_eq!(
+            normalized[0].models,
+            vec!["m1".to_string(), "m2".to_string()]
+        );
 
         // Entries missing name/baseURL are dropped.
         let mixed = serde_json::json!([

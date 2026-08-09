@@ -20,9 +20,8 @@ const ISO_MS: &[time::format_description::FormatItem] =
 
 /// Session id format: ISO-8601 with `:` and `.` replaced by `-`
 /// (matches TS `date.toISOString().replace(/[:.]/g, "-")`).
-const ID_FMT: &[time::format_description::FormatItem] = format_description!(
-    "[year]-[month]-[day]T[hour]-[minute]-[second]-[subsecond digits:3]Z"
-);
+const ID_FMT: &[time::format_description::FormatItem] =
+    format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]-[subsecond digits:3]Z");
 
 /// A filesystem-safe session id (also the sort key: descending = newest first).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -249,7 +248,11 @@ impl Session {
         }
         ensure_regular(&path)?;
         let raw = fs::read_to_string(&path)?;
-        Ok(raw.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect())
+        Ok(raw
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(str::to_string)
+            .collect())
     }
 
     /// Replace the session file with raw JSONL lines (used by sync pull).
@@ -343,7 +346,9 @@ pub fn list_sessions() -> Result<Vec<SessionSummary>> {
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        let Some(id) = name.strip_suffix(".jsonl") else { continue };
+        let Some(id) = name.strip_suffix(".jsonl") else {
+            continue;
+        };
         let id = SessionId(id.to_string());
         let st = entry.metadata()?;
         let lines = read_lines(&id)?;
@@ -529,12 +534,17 @@ mod tests {
         let dir = test_env("title");
         let id = Session::create().unwrap();
         let s = Session::open(&id).unwrap();
-        s.append("user", "fix the login bug in auth.rs please").unwrap();
+        s.append("user", "fix the login bug in auth.rs please")
+            .unwrap();
         let t1 = s.title().unwrap();
         let t2 = s.title().unwrap();
         assert_eq!(t1, t2);
         assert_eq!(t1, "fix the login bug in auth.rs please");
-        assert!(dir.join("sessions").join(format!("{}.title", id.as_str())).exists());
+        assert!(
+            dir.join("sessions")
+                .join(format!("{}.title", id.as_str()))
+                .exists()
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -543,9 +553,11 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap();
         let dir = test_env("recall");
         let a = Session::open(&Session::create().unwrap()).unwrap();
-        a.append("user", "we use postgres with an ORM called diesel").unwrap();
+        a.append("user", "we use postgres with an ORM called diesel")
+            .unwrap();
         let b = Session::open(&Session::create().unwrap()).unwrap();
-        b.append("user", "the frontend is plain react with no backend").unwrap();
+        b.append("user", "the frontend is plain react with no backend")
+            .unwrap();
         let hits = Recall::search("diesel", 8).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, *a.id());
@@ -561,10 +573,25 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap();
         let dir = test_env("ledger");
         let a = Session::open(&Session::create().unwrap()).unwrap();
-        a.append_usage(SessionMeta { turns: 1, input_tokens: 100, output_tokens: 20 }).unwrap();
-        a.append_usage(SessionMeta { turns: 1, input_tokens: 50, output_tokens: 30 }).unwrap();
+        a.append_usage(SessionMeta {
+            turns: 1,
+            input_tokens: 100,
+            output_tokens: 20,
+        })
+        .unwrap();
+        a.append_usage(SessionMeta {
+            turns: 1,
+            input_tokens: 50,
+            output_tokens: 30,
+        })
+        .unwrap();
         let b = Session::open(&Session::create().unwrap()).unwrap();
-        b.append_usage(SessionMeta { turns: 2, input_tokens: 300, output_tokens: 40 }).unwrap();
+        b.append_usage(SessionMeta {
+            turns: 2,
+            input_tokens: 300,
+            output_tokens: 40,
+        })
+        .unwrap();
         let totals = Ledger::totals().unwrap();
         assert_eq!(totals.sessions, 2);
         assert_eq!(totals.turns, 4);

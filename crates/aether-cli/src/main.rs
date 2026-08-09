@@ -11,18 +11,19 @@ mod cli;
 
 use std::io::Write;
 
+use aether_agent::{AgentStopReason, UndoJournal};
 use aether_core::config::{load_config, update_default};
 use aether_core::error::{Error, Result};
 use aether_provider::{
-    fetch_zen_models, get_provider, key_status, list_providers, resolve_default, ChatMessage,
-    ChatRequest, OpenAICompatibleClient, Provider,
+    ChatMessage, ChatRequest, OpenAICompatibleClient, Provider, fetch_zen_models, get_provider,
+    key_status, list_providers, resolve_default,
 };
-use aether_session::{list_sessions, Ledger, Recall, Session, SessionId, SessionMeta};
+use aether_session::{Ledger, Recall, Session, SessionId, SessionMeta, list_sessions};
 use clap::Parser;
 use futures::StreamExt;
 
-use cli::{Cli, Command, SessionsAction, SyncAction};
 use aether_sync::Backend;
+use cli::{Cli, Command, SessionsAction, SyncAction};
 
 const MODEL_SEPARATOR: &str = "────────────────────────────────────────";
 
@@ -30,9 +31,11 @@ const MODEL_SEPARATOR: &str = "────────────────�
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Ask { question, provider, model } => {
-            cmd_ask(&question, provider.as_deref(), model.as_deref()).await
-        }
+        Command::Ask {
+            question,
+            provider,
+            model,
+        } => cmd_ask(&question, provider.as_deref(), model.as_deref()).await,
         Command::Chat { provider, model } => cmd_chat(provider.as_deref(), model.as_deref()).await,
         Command::Use { spec } => cmd_use(&spec),
         Command::Models { provider, live } => cmd_models(provider.as_deref(), live).await,
@@ -48,6 +51,7 @@ async fn main() -> Result<()> {
             build_model,
             route_model,
             iterations,
+            yes,
         } => {
             cmd_agent(
                 &task,
@@ -56,9 +60,11 @@ async fn main() -> Result<()> {
                 build_model.as_deref(),
                 route_model.as_deref(),
                 iterations,
+                yes,
             )
             .await
         }
+        Command::Undo { file } => cmd_undo(file.as_deref()),
     }
 }
 
@@ -97,8 +103,7 @@ async fn cmd_chat(provider: Option<&str>, model: Option<&str>) -> Result<()> {
     let (client, model) = resolve(&config, provider, model);
 
     println!("aether chat — model {model} (exit: Ctrl-D or /exit)");
-    let mut reader = rustyline::DefaultEditor::new()
-        .map_err(|e| Error::Config(e.to_string()))?;
+    let mut reader = rustyline::DefaultEditor::new().map_err(|e| Error::Config(e.to_string()))?;
     loop {
         let readline = reader.readline("aether> ");
         let line = match readline {
@@ -189,12 +194,7 @@ fn cmd_providers() -> Result<()> {
     let config = load_config()?;
     for p in list_providers(&config) {
         let status = key_status(&p);
-        println!(
-            "{}  key: {}  :: {}",
-            p.id,
-            status.as_str(),
-            p.description
-        );
+        println!("{}  key: {}  :: {}", p.id, status.as_str(), p.description);
     }
     Ok(())
 }
@@ -257,7 +257,11 @@ async fn cmd_sessions(action: SessionsAction) -> Result<()> {
             let history = session
                 .read_messages()?
                 .into_iter()
-                .map(|m| ChatMessage { role: m.role, content: m.content, ..ChatMessage::default() })
+                .map(|m| ChatMessage {
+                    role: m.role,
+                    content: m.content,
+                    ..ChatMessage::default()
+                })
                 .collect::<Vec<_>>();
             println!("resuming {} — {}", session.id(), session.title()?);
             cmd_chat_with_history(session, history).await
@@ -280,9 +284,7 @@ fn cmd_recall(phrase: &str) -> Result<()> {
 }
 
 async fn cmd_sync(action: SyncAction) -> Result<()> {
-    use aether_sync::{
-        generate_device_id, github_token, load_state, pull, push, save_state,
-    };
+    use aether_sync::{generate_device_id, github_token, load_state, pull, push, save_state};
     match action {
         SyncAction::SetupFolder { path } => {
             let mut state = load_state()?;
@@ -325,10 +327,7 @@ async fn cmd_sync(action: SyncAction) -> Result<()> {
         }
         SyncAction::Status => {
             let state = load_state()?;
-            let backend = state
-                .backend
-                .clone()
-                .unwrap_or_else(|| "off".to_string());
+            let backend = state.backend.clone().unwrap_or_else(|| "off".to_string());
             println!("backend: {backend}");
             if let Some(gist) = &state.gist_id {
                 println!("gist id: {gist}");
@@ -338,7 +337,14 @@ async fn cmd_sync(action: SyncAction) -> Result<()> {
             }
             println!("device: {}", state.device_id);
             if backend == "gist" {
-                println!("token: {}", if github_token()?.is_some() { "present" } else { "missing" });
+                println!(
+                    "token: {}",
+                    if github_token()?.is_some() {
+                        "present"
+                    } else {
+                        "missing"
+                    }
+                );
             }
             Ok(())
         }
@@ -367,8 +373,7 @@ async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> R
     let (client, model) = resolve(&config, None, None);
 
     println!("model {model} (exit: Ctrl-D or /exit)");
-    let mut reader = rustyline::DefaultEditor::new()
-        .map_err(|e| Error::Config(e.to_string()))?;
+    let mut reader = rustyline::DefaultEditor::new().map_err(|e| Error::Config(e.to_string()))?;
     let mut messages = history;
     loop {
         let readline = reader.readline("aether> ");
@@ -383,10 +388,18 @@ async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> R
             break;
         }
         session.append("user", &line)?;
-        messages.push(ChatMessage { role: "user".to_string(), content: line.clone(), ..ChatMessage::default() });
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: line.clone(),
+            ..ChatMessage::default()
+        });
         println!("\n{MODEL_SEPARATOR}");
         let (reply, usage) = stream_collect(&client, &model, &messages).await?;
-        messages.push(ChatMessage { role: "assistant".to_string(), content: reply.clone(), ..ChatMessage::default() });
+        messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: reply.clone(),
+            ..ChatMessage::default()
+        });
         session.append("assistant", &reply)?;
         if let Some(u) = usage {
             session.append_usage(SessionMeta {
@@ -407,6 +420,7 @@ async fn cmd_agent(
     build_model: Option<&str>,
     route_model: Option<&str>,
     iterations: u32,
+    yes: bool,
 ) -> Result<()> {
     let config = load_config()?;
     let (client, model) = resolve(&config, provider, None);
@@ -415,14 +429,14 @@ async fn cmd_agent(
     let route_model = route_model.unwrap_or(&model).to_string();
     let cwd = std::env::current_dir().map_err(|e| Error::Config(e.to_string()))?;
 
-    let agent = aether_agent::Agent::new(
-        Box::new(client),
-        cwd,
-        plan_model,
-        build_model,
-        route_model,
-    )
-    .with_iteration_cap(iterations);
+    let mut agent =
+        aether_agent::Agent::new(Box::new(client), cwd, plan_model, build_model, route_model)
+            .with_iteration_cap(iterations);
+    if yes {
+        agent = agent.with_yes();
+    } else {
+        agent = agent.with_confirm(true);
+    }
 
     println!("aether agent — plan: build: route (max {iterations} iterations)\n");
     let result = agent.run(task).await?;
@@ -430,11 +444,53 @@ async fn cmd_agent(
     for step in &result.plan.steps {
         println!("  {}. {}", step.id, step.action);
     }
-    println!(
-        "\n[done in {} iterations · {} tool calls]\n",
-        result.iterations, result.tool_calls
-    );
+    let status = match result.stopped_reason {
+        AgentStopReason::Done => format!(
+            "done in {} iterations · {} tool calls",
+            result.iterations, result.tool_calls
+        ),
+        AgentStopReason::IterationCap => format!(
+            "stopped after {} iterations: iteration cap reached",
+            result.iterations
+        ),
+        AgentStopReason::Stagnation => format!(
+            "stopped after {} iterations: no progress detected (plan unchanged, no files modified)",
+            result.iterations
+        ),
+        AgentStopReason::BuildTurnCap => format!(
+            "stopped after {} iterations: build model exhausted its tool budget",
+            result.iterations
+        ),
+    };
+    println!("\n[{status}]\n");
     println!("{}", result.final_answer);
+    Ok(())
+}
+
+/// `aether undo` — list or restore snapshots persisted by the agent.
+fn cmd_undo(file: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir().map_err(|e| Error::Config(e.to_string()))?;
+    let journal = UndoJournal::new(&cwd);
+    match file {
+        Some(rel) => {
+            let restored = journal.restore(rel)?;
+            println!(
+                "restored {rel} from snapshot {} ({} bytes)",
+                restored.seq, restored.bytes
+            );
+        }
+        None => {
+            let snaps = journal.list()?;
+            if snaps.is_empty() {
+                println!("no snapshots in {}", journal.dir().display());
+                return Ok(());
+            }
+            println!("snapshots in {}:", journal.dir().display());
+            for s in snaps {
+                println!("{}  {}  ({} bytes)", s.seq, s.rel, s.bytes);
+            }
+        }
+    }
     Ok(())
 }
 
