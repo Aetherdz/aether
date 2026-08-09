@@ -32,10 +32,22 @@ use cli::{AgentAction, Cli, Command, ProviderAction, SessionAction, SessionsActi
 
 const MODEL_SEPARATOR: &str = "────────────────────────────────────────";
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        // The TUI builds its own tokio runtime, so it must run outside the
+        // runtime created below (a second Runtime::new() would panic).
+        Command::Tui => cmd_tui(),
+        command => {
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| Error::Config(e.to_string()))?;
+            rt.block_on(dispatch(command))
+        }
+    }
+}
+
+async fn dispatch(command: Command) -> Result<()> {
+    match command {
         Command::Ask {
             question,
             provider,
@@ -72,7 +84,6 @@ async fn main() -> Result<()> {
                 .await
             }
         },
-        Command::Tui => cmd_tui(),
         Command::Provider { action } => cmd_provider(action).await,
         Command::Session { action } => cmd_session(action).await,
         Command::Use { spec } => {
@@ -103,6 +114,7 @@ async fn main() -> Result<()> {
             deprecate("undo", "agent undo");
             cmd_undo(file.as_deref())
         }
+        Command::Tui => unreachable!("Tui is dispatched from main() before the runtime"),
     }
 }
 
