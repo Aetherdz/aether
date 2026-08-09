@@ -17,10 +17,11 @@ use aetherdz_provider::{
     fetch_zen_models, get_provider, key_status, list_providers, resolve_default, ChatMessage,
     ChatRequest, OpenAICompatibleClient, Provider,
 };
+use aetherdz_session::{list_sessions, Ledger, Recall, Session, SessionId, SessionMeta};
 use clap::Parser;
 use futures::StreamExt;
 
-use cli::{Cli, Command};
+use cli::{Cli, Command, SessionsAction};
 
 const MODEL_SEPARATOR: &str = "────────────────────────────────────────";
 
@@ -35,6 +36,8 @@ async fn main() -> Result<()> {
         Command::Use { spec } => cmd_use(&spec),
         Command::Models { provider, live } => cmd_models(provider.as_deref(), live).await,
         Command::Providers => cmd_providers(),
+        Command::Sessions { action } => cmd_sessions(action).await,
+        Command::Recall { phrase } => cmd_recall(&phrase),
     }
 }
 
@@ -164,4 +167,153 @@ fn cmd_providers() -> Result<()> {
         );
     }
     Ok(())
+}
+
+async fn cmd_sessions(action: SessionsAction) -> Result<()> {
+    match action {
+        SessionsAction::List => {
+            let sessions = list_sessions()?;
+            if sessions.is_empty() {
+                println!("no sessions yet");
+                return Ok(());
+            }
+            for s in sessions {
+                let title = s.title.unwrap_or_else(|| "(untitled)".to_string());
+                println!(
+                    "{}  {} msgs  in:{} out:{}  {}",
+                    s.id, s.messages, s.stats.input_tokens, s.stats.output_tokens, title
+                );
+            }
+            let totals = Ledger::totals()?;
+            println!(
+                "\n{} sessions · {} turns · {} in / {} out",
+                totals.sessions, totals.turns, totals.input_tokens, totals.output_tokens
+            );
+            Ok(())
+        }
+        SessionsAction::Show { id } => {
+            let id = SessionId::new(id.clone());
+            let session = Session::open(&id)?;
+            let messages = session.read_messages()?;
+            if messages.is_empty() {
+                println!("session {} is empty", id.as_str());
+                return Ok(());
+            }
+            println!("title: {}", session.title()?);
+            for m in messages {
+                println!("[{}] {}", m.role, m.content);
+            }
+            Ok(())
+        }
+        SessionsAction::Delete { id } => {
+            let id = SessionId::new(id.clone());
+            let session = Session::open(&id)?;
+            match session.delete()? {
+                true => println!("deleted {}", id.as_str()),
+                false => println!("session {} not found", id.as_str()),
+            }
+            Ok(())
+        }
+        SessionsAction::Rename { id, title } => {
+            let id = SessionId::new(id.clone());
+            let session = Session::open(&id)?;
+            session.rename(&title)?;
+            println!("renamed {} -> {title}", id.as_str());
+            Ok(())
+        }
+        SessionsAction::Resume { id } => {
+            let id = SessionId::new(id.clone());
+            let session = Session::open(&id)?;
+            let history = session
+                .read_messages()?
+                .into_iter()
+                .map(|m| ChatMessage { role: m.role, content: m.content })
+                .collect::<Vec<_>>();
+            println!("resuming {} — {}", session.id(), session.title()?);
+            cmd_chat_with_history(session, history).await
+        }
+    }
+}
+
+fn cmd_recall(phrase: &str) -> Result<()> {
+    let hits = Recall::search(phrase, 10)?;
+    if hits.is_empty() {
+        println!("no matches for \"{phrase}\"");
+        return Ok(());
+    }
+    for h in hits {
+        let title = h.title.unwrap_or_else(|| "(untitled)".to_string());
+        println!("[{}] {} ({} matches)", h.id, title, h.matches);
+        println!("  {}\n", h.snippet);
+    }
+    Ok(())
+}
+
+async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> Result<()> {
+    let config = load_config()?;
+    let (client, model) = resolve(&config, None, None);
+
+    println!("model {model} (exit: Ctrl-D or /exit)");
+    let mut reader = rustyline::DefaultEditor::new()
+        .map_err(|e| Error::Config(e.to_string()))?;
+    let mut messages = history;
+    loop {
+        let readline = reader.readline("aether> ");
+        let line = match readline {
+            Ok(line) => line.trim().to_string(),
+            Err(_) => break,
+        };
+        if line.is_empty() {
+            continue;
+        }
+        if line == "/exit" || line == "quit" || line == "exit" {
+            break;
+        }
+        session.append("user", &line)?;
+        messages.push(ChatMessage { role: "user".to_string(), content: line.clone() });
+        println!("\n{MODEL_SEPARATOR}");
+        let (reply, usage) = stream_collect(&client, &model, &messages).await?;
+        messages.push(ChatMessage { role: "assistant".to_string(), content: reply.clone() });
+        session.append("assistant", &reply)?;
+        if let Some(u) = usage {
+            session.append_usage(SessionMeta {
+                turns: 1,
+                input_tokens: u.prompt_tokens.unwrap_or(0),
+                output_tokens: u.completion_tokens.unwrap_or(0),
+            })?;
+        }
+        println!("\n{MODEL_SEPARATOR}\n");
+    }
+    Ok(())
+}
+
+async fn stream_collect(
+    client: &OpenAICompatibleClient,
+    model: &str,
+    messages: &[ChatMessage],
+) -> Result<(String, Option<aetherdz_provider::Usage>)> {
+    let request = ChatRequest {
+        model: model.to_string(),
+        messages: messages.to_vec(),
+        temperature: None,
+        stream: true,
+    };
+    let chunks = client.stream_chat(&request).await?;
+    futures::pin_mut!(chunks);
+    let mut out = std::io::stdout().lock();
+    let mut reply = String::new();
+    let mut usage = None;
+    while let Some(chunk) = chunks.next().await {
+        let chunk = chunk?;
+        if let Some(text) = &chunk.content {
+            out.write_all(text.as_bytes())?;
+            out.flush()?;
+            reply.push_str(text);
+        }
+        if chunk.usage.is_some() {
+            usage = chunk.usage;
+        }
+    }
+    println!();
+    Ok((reply, usage))
 }

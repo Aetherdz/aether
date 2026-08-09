@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/aetherdz-core",
     "crates/aetherdz-provider",
+    "crates/aetherdz-session",
     "crates/aetherdz-cli",
     "crates/aetherdz-tui",
 ]

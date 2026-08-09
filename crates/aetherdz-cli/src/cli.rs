@@ -51,4 +51,42 @@ pub enum Command {
     },
     /// List all providers with key status
     Providers,
+    /// List, show, resume, rename or delete sessions
+    Sessions {
+        #[command(subcommand)]
+        action: SessionsAction,
+    },
+    /// Search past sessions by keyword
+    Recall {
+        /// The phrase to search for
+        phrase: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionsAction {
+    /// List all sessions (newest first)
+    List,
+    /// Show the full transcript of a session
+    Show {
+        /// Session id
+        id: String,
+    },
+    /// Delete a session and its title
+    Delete {
+        /// Session id
+        id: String,
+    },
+    /// Rename a session
+    Rename {
+        /// Session id
+        id: String,
+        /// New title
+        title: String,
+    },
+    /// Resume a session in the interactive chat
+    Resume {
+        /// Session id
+        id: String,
+    },
 }
