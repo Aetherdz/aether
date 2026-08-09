@@ -112,6 +112,8 @@ pub struct RatatuiTui {
     /// Live token counters for the active session.
     input_tokens: u64,
     output_tokens: u64,
+    /// Text being typed in the chat input box.
+    input: String,
     /// Palette state: available models + the highlighted one.
     palette_models: Vec<String>,
     palette_index: usize,
@@ -134,12 +136,24 @@ impl Default for RatatuiTui {
             pending: None,
             input_tokens: 0,
             output_tokens: 0,
+            input: String::new(),
             palette_models: Vec::new(),
             palette_index: 0,
             totals: aether_session::Totals::default(),
             last_error: None,
         }
     }
+}
+
+/// Resolve the default model name for the configured provider.
+fn default_model() -> String {
+    let config = load_config().unwrap_or_default();
+    resolve_default(&config, None, None).model
+}
+
+/// Clamp a chat scroll offset so it never scrolls past the last visible row.
+fn clamp_scroll(scroll: usize, total: usize, viewport: usize) -> usize {
+    scroll.min(total.saturating_sub(viewport))
 }
 
 impl RatatuiTui {
@@ -411,7 +425,7 @@ impl RatatuiTui {
                 let _ = self.refresh_sessions();
                 KeyAction::Continue
             }
-            KeyCode::Char('q') if self.pending.is_none() => {
+            KeyCode::Char('q') if self.pending.is_none() && self.input.is_empty() => {
                 self.screen = Screen::Sessions;
                 let _ = self.refresh_sessions();
                 KeyAction::Continue
@@ -422,6 +436,25 @@ impl RatatuiTui {
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.chat_scroll = self.chat_scroll.saturating_sub(1);
+                KeyAction::Continue
+            }
+            KeyCode::Enter if self.pending.is_none() && !self.input.trim().is_empty() => {
+                let question = std::mem::take(&mut self.input);
+                let model = self
+                    .palette_models
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(default_model);
+                KeyAction::SendTurn { question, model }
+            }
+            KeyCode::Backspace => {
+                self.input.pop();
+                KeyAction::Continue
+            }
+            KeyCode::Char(c)
+                if self.pending.is_none() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                self.input.push(c);
                 KeyAction::Continue
             }
             _ => KeyAction::Continue,
@@ -560,10 +593,16 @@ impl RatatuiTui {
         frame.render_stateful_widget(list, list_area, &mut self.list_state);
 
         let totals = &self.totals;
-        let footer = format!(
-            "{} sessions · {} turns · {} in / {} out   —  j/k or wheel: move · Enter: open · d: delete · ctrl+P: palette · q: quit",
+        let mut footer = format!(
+            "{} sessions · {} turns · {} in / {} out   —  j/k or wheel: move · Enter: open · d: delete · r: rename · ctrl+P: model · q: quit",
             totals.sessions, totals.turns, totals.input_tokens, totals.output_tokens
         );
+        if let Some(err) = &self.last_error {
+            footer.push_str(&format!(
+                "   error: {}",
+                err.to_string().lines().next().unwrap_or_default()
+            ));
+        }
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 footer,
@@ -577,9 +616,10 @@ impl RatatuiTui {
         let vertical = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(0),
+            Constraint::Length(3),
             Constraint::Length(1),
         ]);
-        let [title_area, body_area, footer_area] = vertical.areas(frame.area());
+        let [title_area, body_area, input_area, footer_area] = vertical.areas(frame.area());
 
         let title = self
             .active
@@ -599,6 +639,7 @@ impl RatatuiTui {
         // Visible window of rows (oldest at top, scroll up to reveal history).
         let viewport = body_area.height as usize;
         let total = self.chat.len() + usize::from(self.pending.is_some());
+        self.chat_scroll = clamp_scroll(self.chat_scroll, total, viewport);
         let end = total.saturating_sub(self.chat_scroll);
         let start = end.saturating_sub(viewport);
         let mut rows: Vec<Line> = self
@@ -624,13 +665,38 @@ impl RatatuiTui {
             .wrap(Wrap { trim: false });
         frame.render_widget(body, body_area);
 
-        let usage = render::usage_summary(Some(self.input_tokens), Some(self.output_tokens), None);
-        let hint = if self.pending.is_some() {
-            "streaming…"
+        let input_widget = Paragraph::new(if self.pending.is_some() {
+            Line::from(Span::styled(
+                "streaming…",
+                Style::default().fg(Color::DarkGray),
+            ))
         } else {
-            "Esc: back · j/k or wheel: scroll · ctrl+P: palette"
-        };
-        let footer = format!("{usage}   {hint}");
+            Line::from(vec![
+                Span::styled(
+                    "> ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(self.input.clone()),
+            ])
+        })
+        .block(Block::default().borders(Borders::ALL).title(" input "));
+        frame.render_widget(input_widget, input_area);
+
+        let usage = render::usage_summary(Some(self.input_tokens), Some(self.output_tokens), None);
+        let mut footer_parts = vec![usage];
+        if let Some(err) = &self.last_error {
+            footer_parts.push(format!(
+                "error: {}",
+                err.to_string().lines().next().unwrap_or_default()
+            ));
+        }
+        footer_parts.push(
+            "Enter: send · type: message · j/k or wheel: scroll · ctrl+P: model · Esc: back · q: quit"
+                .to_string(),
+        );
+        let footer = footer_parts.join("   ");
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 footer,
@@ -833,6 +899,59 @@ mod tests {
             }
         );
         assert_eq!(app.screen, Screen::Chat);
+    }
+
+    #[test]
+    fn chat_input_accumulates_and_clears() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+        assert_eq!(app.input, "hi");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.input, "h");
+    }
+
+    #[test]
+    fn chat_enter_sends_typed_question() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            chat: vec![ChatRow {
+                role: "user".into(),
+                content: "older".into(),
+            }],
+            input: "new question".into(),
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            action,
+            KeyAction::SendTurn { question, .. } if question == "new question"
+        ));
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn chat_enter_ignores_whitespace_input() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input: "   ".into(),
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Continue);
+        assert_eq!(app.input, "   ");
+    }
+
+    #[test]
+    fn chat_scroll_clamps_to_visible_window() {
+        assert_eq!(clamp_scroll(0, 10, 5), 0);
+        assert_eq!(clamp_scroll(5, 10, 5), 5);
+        assert_eq!(clamp_scroll(999, 10, 5), 5);
+        assert_eq!(clamp_scroll(3, 2, 5), 0);
+        assert_eq!(clamp_scroll(4, 2, 5), 0);
     }
 
     #[test]
