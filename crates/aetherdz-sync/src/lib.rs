@@ -156,6 +156,31 @@ pub fn save_state(state: &SyncState) -> Result<()> {
     let raw = serde_json::to_string_pretty(state)?;
     atomic_write(&path, raw.as_bytes())
 }
+
+/// Resolve the configured backend from state, or an error telling the user
+/// sync is off / misconfigured.
+pub fn resolve_backend(state: &SyncState) -> Result<Backend> {
+    match state.backend.as_deref() {
+        Some("gist") => match &state.gist_id {
+            Some(id) => Ok(Backend::Gist { id: id.clone() }),
+            None => Err(Error::InvalidInput(
+                "gist backend has no id; re-run setup".to_string(),
+            )),
+        },
+        Some("folder") => match &state.folder {
+            Some(path) => Ok(Backend::Folder {
+                path: PathBuf::from(path),
+            }),
+            None => Err(Error::InvalidInput(
+                "folder backend has no path; re-run setup".to_string(),
+            )),
+        },
+        _ => Err(Error::InvalidInput(
+            "sync is off — run `aether sync setup folder <path>` or `aether sync setup gist <id>` first"
+                .to_string(),
+        )),
+    }
+}
 /// Read the GitHub token from env or `~/.config/aether/github-token`.
 pub fn github_token() -> Result<Option<String>> {
     match std::env::var("AETHER_GITHUB_TOKEN") {
