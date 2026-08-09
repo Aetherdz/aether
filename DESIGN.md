@@ -1,4 +1,4 @@
-# aetherdz Design System
+# Aether Design System
 
 ## 0. Research Log
 
@@ -100,7 +100,7 @@ All spacing derives from a base of **4px**.
 
 ### Logo Mark (SVG)
 - **Structure**: `<svg>` — black rounded-square tile (fill #111) with geometric "A" monogram in white + blinking white terminal-cursor block as the crossbar. Drawn by hand, original geometry.
-- **Variants**: full (mark + wordmark "aetherdz"), mark-only (favicon, nav small), mono-inline (text logo in terminal).
+- **Variants**: full (mark + wordmark "Aether"), mark-only (favicon, nav small), mono-inline (text logo in terminal).
 - **Spacing**: mark 8px gap from wordmark; wordmark in JetBrains Mono 700.
 - **States**: static (no hover state on logo itself).
 - **Motion**: subtle 1.5s ease-in-out blink on the cursor block only, disabled under reduced-motion.
