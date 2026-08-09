@@ -24,6 +24,10 @@ same UX, the same providers, the same session format, but compiled to a single
 static binary that talks to any OpenAI-compatible API. It started as a migration
 exercise and became a full agent: chat, sessions, sync, MCP, and a ratatui TUI.
 
+<p align="center">
+  <img src="site/demo.gif" width="800" alt="aether in action — help, providers, models, ask, sessions" />
+</p>
+
 ## Why Aether?
 
 |  | Aether | Node-based agents |
