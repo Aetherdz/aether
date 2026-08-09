@@ -21,7 +21,8 @@ use aetherdz_session::{list_sessions, Ledger, Recall, Session, SessionId, Sessio
 use clap::Parser;
 use futures::StreamExt;
 
-use cli::{Cli, Command, SessionsAction};
+use cli::{Cli, Command, SessionsAction, SyncAction};
+use aetherdz_sync::Backend;
 
 const MODEL_SEPARATOR: &str = "────────────────────────────────────────";
 
@@ -38,6 +39,7 @@ async fn main() -> Result<()> {
         Command::Providers => cmd_providers(),
         Command::Sessions { action } => cmd_sessions(action).await,
         Command::Recall { phrase } => cmd_recall(&phrase),
+        Command::Sync { action } => cmd_sync(action).await,
     }
 }
 
@@ -247,6 +249,89 @@ fn cmd_recall(phrase: &str) -> Result<()> {
         println!("  {}\n", h.snippet);
     }
     Ok(())
+}
+
+async fn cmd_sync(action: SyncAction) -> Result<()> {
+    use aetherdz_sync::{
+        generate_device_id, github_token, load_state, pull, push, save_state,
+    };
+    match action {
+        SyncAction::SetupFolder { path } => {
+            let mut state = load_state()?;
+            if state.device_id.is_empty() {
+                state.device_id = generate_device_id();
+            }
+            state.backend = Some("folder".to_string());
+            state.folder = Some(path.clone());
+            save_state(&state)?;
+            println!("sync enabled: folder {path}");
+            Ok(())
+        }
+        SyncAction::SetupGist { id } => {
+            let mut state = load_state()?;
+            if state.device_id.is_empty() {
+                state.device_id = generate_device_id();
+            }
+            state.backend = Some("gist".to_string());
+            state.gist_id = Some(id.clone());
+            save_state(&state)?;
+            println!("sync enabled: gist {id}");
+            Ok(())
+        }
+        SyncAction::Push => {
+            let state = load_state()?;
+            let backend = resolve_backend(&state)?;
+            let report = push(&state.device_id, &backend).await?;
+            println!("pushed {} sessions", report.written);
+            Ok(())
+        }
+        SyncAction::Pull => {
+            let state = load_state()?;
+            let backend = resolve_backend(&state)?;
+            let report = pull(&backend).await?;
+            println!(
+                "pulled: {} written, {} merged",
+                report.written, report.merged
+            );
+            Ok(())
+        }
+        SyncAction::Status => {
+            let state = load_state()?;
+            let backend = state
+                .backend
+                .clone()
+                .unwrap_or_else(|| "off".to_string());
+            println!("backend: {backend}");
+            if let Some(gist) = &state.gist_id {
+                println!("gist id: {gist}");
+            }
+            if let Some(folder) = &state.folder {
+                println!("folder: {folder}");
+            }
+            println!("device: {}", state.device_id);
+            if backend == "gist" {
+                println!("token: {}", if github_token()?.is_some() { "present" } else { "missing" });
+            }
+            Ok(())
+        }
+    }
+}
+
+fn resolve_backend(state: &aetherdz_sync::SyncState) -> Result<Backend> {
+    match state.backend.as_deref() {
+        Some("folder") => match &state.folder {
+            Some(path) => Ok(Backend::Folder { path: path.into() }),
+            None => Err(Error::InvalidInput("folder backend has no path; re-run setup".into())),
+        },
+        Some("gist") => match &state.gist_id {
+            Some(id) => Ok(Backend::Gist { id: id.clone() }),
+            None => Err(Error::InvalidInput("gist backend has no id; re-run setup".into())),
+        },
+        _ => Err(Error::InvalidInput(
+            "sync is off — run `aether sync setup folder <path>` or `aether sync setup gist <id>` first"
+                .into(),
+        )),
+    }
 }
 
 async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> Result<()> {

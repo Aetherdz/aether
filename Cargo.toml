@@ -4,6 +4,7 @@ members = [
     "crates/aetherdz-core",
     "crates/aetherdz-provider",
     "crates/aetherdz-session",
+    "crates/aetherdz-sync",
     "crates/aetherdz-cli",
     "crates/aetherdz-tui",
 ]

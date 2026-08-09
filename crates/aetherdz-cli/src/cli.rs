@@ -61,6 +61,11 @@ pub enum Command {
         /// The phrase to search for
         phrase: String,
     },
+    /// Sync sessions across devices (gist or folder backend)
+    Sync {
+        #[command(subcommand)]
+        action: SyncAction,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -89,4 +94,24 @@ pub enum SessionsAction {
         /// Session id
         id: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SyncAction {
+    /// Set up a folder backend and persist the state
+    SetupFolder {
+        /// Local directory that holds aether-sessions.json
+        path: String,
+    },
+    /// Set up a gist backend and persist the state
+    SetupGist {
+        /// GitHub gist id
+        id: String,
+    },
+    /// Push local sessions to the backend (pull + merge + push)
+    Push,
+    /// Pull the backend bundle and merge sessions into the local store
+    Pull,
+    /// Show the current sync state and token presence
+    Status,
 }

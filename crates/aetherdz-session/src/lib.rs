@@ -240,6 +240,29 @@ impl Session {
     pub fn rename(&self, title: &str) -> Result<()> {
         write_title(&self.id, title)
     }
+
+    /// Raw JSONL lines of the session file (for sync bundles).
+    pub fn raw_lines(&self) -> Result<Vec<String>> {
+        let path = session_file(&self.id)?;
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        ensure_regular(&path)?;
+        let raw = fs::read_to_string(&path)?;
+        Ok(raw.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect())
+    }
+
+    /// Replace the session file with raw JSONL lines (used by sync pull).
+    pub fn write_raw_lines(&self, lines: &[String]) -> Result<()> {
+        let path = session_file(&self.id)?;
+        ensure_regular(&path)?;
+        let mut content = String::new();
+        for line in lines {
+            content.push_str(line);
+            content.push('\n');
+        }
+        atomic_write(&path, content.as_bytes())
+    }
 }
 
 impl Recall {
