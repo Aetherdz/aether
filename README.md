@@ -58,9 +58,9 @@ No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 | **Telemetry** | ❌ none, verifiable | ⚠️ opt-in | ⚠️ | ⚠️ | ⚠️ | ❌ |
 | **Local models (Ollama/LM Studio)** | ✅ first-class providers | ✅ | ✅ | ❌ | ✅ | ⚠️ |
 
-> Startup time and RAM figures will be published in a reproducible benchmark
-> (see [benchmark/](benchmark/)) — numbers on this table are architectural
-> claims until then.
+> Measured on this repo (see [benchmark/](benchmark/) for the harness):
+> **4.99 MB binary · ~112 ms cold start · ~5 MB idle TUI RSS** — reproducible
+> via `./benchmark/run.sh`. Numbers above are architectural claims otherwise.
 
 ## Quick start
 
