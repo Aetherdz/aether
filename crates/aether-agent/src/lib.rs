@@ -15,7 +15,7 @@ pub mod route;
 pub mod tools;
 pub mod undo;
 
-pub use agent::{Agent, AgentResult, AgentStopReason, Completions};
+pub use agent::{Agent, AgentResult, AgentState, AgentStopReason, Completions, STATE_FILE};
 pub use diff::{DiffLine, DiffLineKind, diff_lines, render_diff};
 pub use plan::Plan;
 pub use route::Verdict;

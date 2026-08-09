@@ -118,7 +118,7 @@ pub struct ChatRequest {
 /// The wire shape varies by role: user/assistant carry text in `content`,
 /// tool results carry `tool_call_id` + text, and assistant messages that
 /// invoke tools carry `tool_calls` with an empty (omitted) content.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ChatMessage {
     pub role: String,
     #[serde(skip_serializing_if = "String::is_empty")]

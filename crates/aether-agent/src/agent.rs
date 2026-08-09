@@ -15,12 +15,18 @@
 
 use aether_core::error::{Error, Result};
 use aether_provider::{ChatCompletion, ChatMessage, ChatRequest, ToolCall, ToolDef};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 use crate::plan::{Plan, extract_json_object, parse_plan};
 use crate::prompts::{PLAN_SYSTEM, ROUTE_SYSTEM, build_system_with_tools, render_plan};
 use crate::route::{Verdict, parse_verdict};
 use crate::tools::Tools;
+
+/// Checkpoint file name, written to the agent working directory after every
+/// iteration so an interrupted run can be resumed with `Agent::resume`.
+pub const STATE_FILE: &str = ".aether-agent-state.json";
 
 /// Anything that can run a non-streaming completion.
 #[async_trait::async_trait]
@@ -65,8 +71,43 @@ pub struct Agent {
     build_model: String,
     route_model: String,
     tools: Tools,
+    root: PathBuf,
     max_iterations: u32,
     max_build_turns: u32,
+}
+
+/// Serializable checkpoint of an in-flight agent run, written to
+/// [`STATE_FILE`] under the working directory after every completed
+/// iteration. A crash or Ctrl-C never loses more than one iteration:
+/// [`Agent::resume`] reloads this state and continues from
+/// `iteration + 1` with the same plan, feedback history and stagnation
+/// counters. Terminal outcomes remove the checkpoint file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentState {
+    pub task: String,
+    pub plan: Plan,
+    /// Iterations completed so far; `0` means only the plan exists.
+    pub iteration: u32,
+    pub tool_calls: u32,
+    pub final_answer: String,
+    /// Continue/revise feedback history fed back to the build model.
+    pub history: Vec<ChatMessage>,
+    pub prev_plan: Option<Plan>,
+    pub stagnant_streak: u32,
+}
+
+impl AgentState {
+    /// Read the checkpoint from `root/.aether-agent-state.json`, if present.
+    pub fn load(root: &Path) -> Result<Option<Self>> {
+        let path = root.join(STATE_FILE);
+        match std::fs::read_to_string(&path) {
+            Ok(raw) => serde_json::from_str(&raw)
+                .map(Some)
+                .map_err(|e| Error::InvalidInput(format!("corrupt state file {}: {e}", path.display()))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
 }
 
 /// Wire shape of a fenced tool invocation inside build text.
@@ -91,7 +132,8 @@ impl Agent {
             plan_model,
             build_model,
             route_model,
-            tools: Tools::new(root),
+            tools: Tools::new(root.clone()),
+            root,
             max_iterations: 6,
             max_build_turns: 12,
         }
@@ -120,22 +162,55 @@ impl Agent {
     }
 
     /// Run the loop on `task` until the router says done or caps are hit.
+    ///
+    /// The initial plan is persisted to [`STATE_FILE`] immediately, then the
+    /// checkpoint is rewritten after every iteration. A clean terminal
+    /// outcome removes it; an error or kill leaves it behind for [`resume`].
+    ///
+    /// [`resume`]: Self::resume
     pub async fn run(&self, task: &str) -> Result<AgentResult> {
-        let mut plan = self.plan(task).await?;
-        let mut history: Vec<ChatMessage> = Vec::new();
-        let mut tool_calls: u32 = 0;
-        let mut final_answer = String::new();
-        let mut prev_plan: Option<Plan> = None;
-        let mut stagnant_streak: u32 = 0;
+        let plan = self.plan(task).await?;
+        let state = AgentState {
+            task: task.to_string(),
+            plan,
+            iteration: 0,
+            tool_calls: 0,
+            final_answer: String::new(),
+            history: Vec::new(),
+            prev_plan: None,
+            stagnant_streak: 0,
+        };
+        self.persist(&state);
+        self.run_from(state).await
+    }
 
-        for iteration in 1..=self.max_iterations {
-            let build = self.build_round(task, &plan, &history).await?;
+    /// Continue a previously interrupted run from its [`AgentState`]
+    /// checkpoint, picking up at `state.iteration + 1` with the same plan,
+    /// history and stagnation counters.
+    pub async fn resume(&self, state: AgentState) -> Result<AgentResult> {
+        self.run_from(state).await
+    }
+
+    /// Shared loop body: `run` seeds it with a fresh state, `resume` reuses
+    /// a persisted one. The checkpoint is written after each iteration.
+    async fn run_from(&self, mut state: AgentState) -> Result<AgentResult> {
+        let task = state.task.clone();
+        let mut plan = state.plan.clone();
+        let mut history = std::mem::take(&mut state.history);
+        let mut tool_calls = state.tool_calls;
+        let mut final_answer = state.final_answer.clone();
+        let mut prev_plan = state.prev_plan.clone();
+        let mut stagnant_streak = state.stagnant_streak;
+
+        for iteration in state.iteration + 1..=self.max_iterations {
+            let build = self.build_round(&task, &plan, &history).await?;
             tool_calls += build.tool_calls;
             final_answer = build.summary.clone();
 
             // The build model spent its whole tool budget without producing
             // a summary — there is nothing more to route on.
             if build.capped {
+                self.clear_state();
                 return Ok(AgentResult {
                     plan,
                     iterations: iteration,
@@ -157,6 +232,7 @@ impl Agent {
                 stagnant_streak = 0;
             }
             if stagnant_streak >= 2 {
+                self.clear_state();
                 return Ok(AgentResult {
                     plan,
                     iterations: iteration,
@@ -167,9 +243,10 @@ impl Agent {
             }
             prev_plan = Some(plan.clone());
 
-            let verdict = self.route(task, &plan, &build.summary, &history).await?;
+            let verdict = self.route(&task, &plan, &build.summary, &history).await?;
             match verdict {
                 Verdict::Done(answer) => {
+                    self.clear_state();
                     return Ok(AgentResult {
                         plan,
                         iterations: iteration,
@@ -201,8 +278,18 @@ impl Agent {
                     plan = new_plan;
                 }
             }
+
+            state.iteration = iteration;
+            state.plan = plan.clone();
+            state.history = history.clone();
+            state.tool_calls = tool_calls;
+            state.final_answer = final_answer.clone();
+            state.prev_plan = prev_plan.clone();
+            state.stagnant_streak = stagnant_streak;
+            self.persist(&state);
         }
 
+        self.clear_state();
         Ok(AgentResult {
             plan,
             iterations: self.max_iterations,
@@ -210,6 +297,20 @@ impl Agent {
             final_answer,
             stopped_reason: AgentStopReason::IterationCap,
         })
+    }
+
+    fn state_path(&self) -> PathBuf {
+        self.root.join(STATE_FILE)
+    }
+
+    fn persist(&self, state: &AgentState) {
+        if let Ok(raw) = serde_json::to_string_pretty(state) {
+            let _ = std::fs::write(self.state_path(), raw);
+        }
+    }
+
+    fn clear_state(&self) {
+        let _ = std::fs::remove_file(self.state_path());
     }
 
     /// Role 1: produce the plan.
@@ -745,6 +846,106 @@ Done"#;
         assert_eq!(result.stopped_reason, AgentStopReason::Stagnation);
         // Revision happened at iter 1; stagnation needs iters 3+4 unchanged.
         assert_eq!(result.iterations, 4);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn resume_continues_after_crash() {
+        let root = temp_root("resume");
+        std::fs::write(root.join("f.txt"), "data").unwrap();
+        // Plan + iter 1 (build+route) + iter 2 (build+route); the 3rd build
+        // call hits the exhausted mock -> provider error simulates a crash.
+        let crash_replies = vec![
+            MockClient::text(r#"{"goal":"g","steps":[{"id":1,"action":"read f.txt"}]}"#),
+            MockClient::text("working 1"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"keep going"}"#),
+            MockClient::text("working 2"),
+            MockClient::text(r#"{"verdict":"continue","feedback":"keep going"}"#),
+        ];
+        let agent = Agent::new(
+            Box::new(MockClient::new(crash_replies)),
+            root.clone(),
+            "m".to_string(),
+            "m".to_string(),
+            "m".to_string(),
+        )
+        .with_iteration_cap(6);
+        let err = agent.run("task").await.unwrap_err();
+        assert!(
+            err.to_string().contains("mock exhausted"),
+            "expected provider crash, got {err}"
+        );
+
+        let state = AgentState::load(&root)
+            .unwrap()
+            .expect("state file must survive the crash");
+        assert_eq!(state.iteration, 2);
+        assert_eq!(state.plan.goal, "g");
+        assert_eq!(state.history.len(), 2);
+        // Two stagnant iterations (no tools, unchanged plan) before the crash.
+        assert_eq!(state.stagnant_streak, 1);
+        assert_eq!(state.prev_plan, Some(state.plan.clone()));
+
+        // Resume with a fresh client: iteration counter continues at 3, and
+        // the file modification resets the carried-over stagnation streak.
+        let resume_replies = vec![
+            MockClient::with_tools(vec![tool_call(
+                "c3",
+                "write_file",
+                r#"{"path":"f.txt","content":"v3"}"#,
+            )]),
+            MockClient::text("wrote f.txt"),
+            MockClient::text(r#"{"verdict":"done","final_answer":"finished"}"#),
+        ];
+        let agent2 = Agent::new(
+            Box::new(MockClient::new(resume_replies)),
+            root.clone(),
+            "m".to_string(),
+            "m".to_string(),
+            "m".to_string(),
+        )
+        .with_iteration_cap(6);
+        let result = agent2.resume(state).await.unwrap();
+        assert_eq!(result.stopped_reason, AgentStopReason::Done);
+        assert_eq!(result.iterations, 3);
+        assert_eq!(result.tool_calls, 1);
+        assert_eq!(result.final_answer, "finished");
+        assert!(
+            !root.join(STATE_FILE).exists(),
+            "checkpoint must be removed on clean finish"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn clean_run_removes_checkpoint() {
+        let root = temp_root("cleanstate");
+        std::fs::write(root.join("f.txt"), "data").unwrap();
+        let mock = MockClient::new(vec![
+            MockClient::text(r#"{"goal":"g","steps":[{"id":1,"action":"read f.txt"}]}"#),
+            MockClient::text("working"),
+            MockClient::text(r#"{"verdict":"done","final_answer":"data"}"#),
+        ]);
+        let agent = Agent::new(
+            Box::new(mock),
+            root.clone(),
+            "m".to_string(),
+            "m".to_string(),
+            "m".to_string(),
+        );
+        let result = agent.run("task").await.unwrap();
+        assert_eq!(result.stopped_reason, AgentStopReason::Done);
+        assert!(
+            !root.join(STATE_FILE).exists(),
+            "checkpoint must be removed after a clean run"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn state_load_missing_returns_none() {
+        let root = temp_root("nostate");
+        assert!(AgentState::load(&root).unwrap().is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

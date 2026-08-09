@@ -62,18 +62,23 @@ async fn dispatch(command: Command) -> Result<()> {
             build_model,
             route_model,
             iterations,
+            resume,
             yes,
         } => match action {
             Some(AgentAction::Undo { file }) => cmd_undo(file.as_deref()),
             None => {
-                let task = task.ok_or_else(|| {
-                    Error::InvalidInput(
-                        "`aether agent` needs a task or a subcommand (try `aether agent undo`)"
-                            .into(),
-                    )
-                })?;
+                let task = if resume {
+                    None
+                } else {
+                    Some(task.ok_or_else(|| {
+                        Error::InvalidInput(
+                            "`aether agent` needs a task or a subcommand (try `aether agent undo`)"
+                                .into(),
+                        )
+                    })?)
+                };
                 cmd_agent(
-                    &task,
+                    task.as_deref(),
                     provider.as_deref(),
                     plan_model.as_deref(),
                     build_model.as_deref(),
@@ -497,7 +502,7 @@ async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> R
 }
 
 async fn cmd_agent(
-    task: &str,
+    task: Option<&str>,
     provider: Option<&str>,
     plan_model: Option<&str>,
     build_model: Option<&str>,
@@ -513,7 +518,7 @@ async fn cmd_agent(
     let cwd = std::env::current_dir().map_err(|e| Error::Config(e.to_string()))?;
 
     let mut agent =
-        aether_agent::Agent::new(Box::new(client), cwd, plan_model, build_model, route_model)
+        aether_agent::Agent::new(Box::new(client), cwd.clone(), plan_model, build_model, route_model)
             .with_iteration_cap(iterations);
     if yes {
         agent = agent.with_yes();
@@ -521,8 +526,26 @@ async fn cmd_agent(
         agent = agent.with_confirm(true);
     }
 
-    println!("aether agent — plan: build: route (max {iterations} iterations)\n");
-    let result = agent.run(task).await?;
+    let result = match task {
+        Some(task) => {
+            println!("aether agent — plan: build: route (max {iterations} iterations)\n");
+            agent.run(task).await?
+        }
+        None => {
+            let state = aether_agent::AgentState::load(&cwd)?.ok_or_else(|| {
+                Error::Config(format!(
+                    "no {} checkpoint in {} (run `aether agent \"task\"` first)",
+                    aether_agent::STATE_FILE,
+                    cwd.display()
+                ))
+            })?;
+            println!(
+                "aether agent — resuming from {} ({} iterations completed)\n",
+                aether_agent::STATE_FILE, state.iteration
+            );
+            agent.resume(state).await?
+        }
+    };
     println!("plan: {}", result.plan.goal);
     for step in &result.plan.steps {
         println!("  {}. {}", step.id, step.action);

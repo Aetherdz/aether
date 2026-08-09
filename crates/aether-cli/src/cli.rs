@@ -61,6 +61,10 @@ pub enum Command {
         /// Max loop iterations before giving up
         #[arg(short, long, default_value_t = 6)]
         iterations: u32,
+        /// Resume the last interrupted run from .aether-agent-state.json
+        /// (task is read from the checkpoint)
+        #[arg(long)]
+        resume: bool,
         /// Auto-approve write_file changes without prompting (non-interactive)
         #[arg(long)]
         yes: bool,
@@ -279,6 +283,25 @@ mod tests {
         }
         // Bare `agent` with no task and no subcommand parses (handled in main).
         assert!(matches!(parse(&["agent"]), Command::Agent { .. }));
+    }
+
+    #[test]
+    fn agent_resume_parses_without_task() {
+        match parse(&["agent", "--resume"]) {
+            Command::Agent {
+                task: None,
+                action: None,
+                resume: true,
+                ..
+            } => {}
+            other => panic!("expected Agent --resume without task, got {other:?}"),
+        }
+        match parse(&["agent", "fix the bug", "--resume"]) {
+            Command::Agent {
+                task: Some(t), resume: true, ..
+            } => assert_eq!(t, "fix the bug"),
+            other => panic!("expected Agent with task + --resume, got {other:?}"),
+        }
     }
 
     #[test]
