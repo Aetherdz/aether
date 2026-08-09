@@ -4,23 +4,23 @@ Sources cloned locally at `/tmp/opencode/inspiration/` (all MIT/Apache, legally 
 
 | Project | Stars | Why it matters | Exact files to read |
 |---|---|---|---|
-| **sigoden/aichat** | ~9.7k | The OG Rust AI CLI (2023). Serveral years of battle-testing on the EXACT problem aetherdz solves | `src/client/openai_compatible.rs` (our provider pattern), `src/client/stream.rs` (SSE parse), `src/repl/` (REPL loop), `src/client/claude.rs`+`gemini.rs` (why SSE differs per provider) |
+| **sigoden/aichat** | ~9.7k | The OG Rust AI CLI (2023). Serveral years of battle-testing on the EXACT problem aether solves | `src/client/openai_compatible.rs` (our provider pattern), `src/client/stream.rs` (SSE parse), `src/repl/` (REPL loop), `src/client/claude.rs`+`gemini.rs` (why SSE differs per provider) |
 | **sethjuarez/agentive** | MIT | The agentic plumbing we need for Phase 4: tool-call accumulation across SSE chunks, context trimming, guardrails, cooperative cancel | `lib/src/providers/sse.rs`, `lib/src/runner.rs` (the agent loop), `lib/src/context.rs` (trimming), `lib/src/guardrails.rs`, `lib/src/cancel.rs` |
-| **avala-ai/agent-code** | MIT | Pure-Rust coding agent with toolbox (like our tools/): sandbox, permissions, skills, hooks, schedule | `crates/lib/src/sandbox/`, `permissions/`, `skills/`, `tools/`, `query/` — the safety architecture we want for `aetherdz-tools` |
+| **avala-ai/agent-code** | MIT | Pure-Rust coding agent with toolbox (like our tools/): sandbox, permissions, skills, hooks, schedule | `crates/lib/src/sandbox/`, `permissions/`, `skills/`, `tools/`, `query/` — the safety architecture we want for `aether-tools` |
 
 ## What to absorb (mapped to our build)
 
-### 1. `aetherdz-provider` (Phase 0) ← aichat
+### 1. `aether-provider` (Phase 0) ← aichat
 - aichat's `openai_compatible.rs` is a single generic SSE client for every OpenAI-compatible provider — matches our "8+ providers speak OpenAI wire format + SSE" decision from blueprint §5. STEAL the structure: one generic client + per-provider config (base_url, model map), NOT one client per provider.
 - `stream.rs` handles: event framing, chunk assembly, `finish_reason`, thinking/reasoning_content (deepseek!). Read before writing our `Provider::stream()`.
 - HOW aichat does per-provider quirks (claude/gemini differ) — warning: 2026 SSE streams carry `reasoning_content`; our default zen/deepseek uses it. aichat already solved the `reasoning_content` event handling — copy the approach.
 
-### 2. `aetherdz-agent` (Phase 4) ← agentive
+### 2. `aether-agent` (Phase 4) ← agentive
 - `runner.rs` = the stream → tool_calls → execute → feed back → repeat transfer loop. This is EXACTLY executor.ts's loop. Steal: `RunnerEvent` enum (ToolResult/Status/MessagesUpdated/Done/Error) → maps 1:1 to our `TuiEvent` bridge (TS tui/bridge.ts).
-- `context.rs` = context-window trimming/summarization — TS never did this well; this makes us BETTER than TS aether (blueprint §2.2 recall/embeddings gated). Adopt as `aetherdz-core::context` (phase 4).
+- `context.rs` = context-window trimming/summarization — TS never did this well; this makes us BETTER than TS aether (blueprint §2.2 recall/embeddings gated). Adopt as `aether-core::context` (phase 4).
 - `cancel.rs` = CancellationToken — matches TS Esc/Ctrl+C abort (chat.ts). Use tokio_util::sync::CancellationToken (they use it).
 
-### 3. `aetherdz-tools` (Phase 4) ← agent-code
+### 3. `aether-tools` (Phase 4) ← agent-code
 - `sandbox.rs` + `permissions/` = the allow/deny model: agent-code enforces command allowlists + path sandboxes — exactly our tools/files.ts isInside/assertInside + bash.ts confirm gate. Steal the enum PermissionChecker pattern; port to our sandbox.
 - `skills/` = how they resolve skill dirs — same as our executor resolveSkills (repo + ~/.config/aether/skills). Reference if TS implementation is thin.
 

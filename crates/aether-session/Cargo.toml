@@ -1,0 +1,13 @@
+[package]
+name = "aether-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aetherdz JSONL sessions: auto-title, recall, ledger (port of session.ts)"
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+serde.workspace = true
+serde_json.workspace = true
+time = { version = "0.3", features = ["formatting", "macros"] }

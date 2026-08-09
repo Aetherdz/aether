@@ -1,4 +1,4 @@
-# Phase 1 — aetherdz-session: Ready-to-fire spec
+# Phase 1 — aether-session: Ready-to-fire spec
 *Prepared by strategy manager for instant dispatch the moment Phase 0 lands. Follows blueprint §2.1 (session.ts) + §4 (workspace) + §5 (JSONL decision).*
 
 ## Goal
@@ -15,7 +15,7 @@ Sessions with auto-title, recall, and ledger — JSONL files, no SQLite.
 - Auto-title: `<id>.title` sidecar file (plaintext). TS heuristic: from first user message, trimmed ≤40 chars. NO LLM call (cheap heuristic per blueprint §5.2.2).
 - Meta lines carry token usage/cost per turn (ledger).
 
-## Crate: aetherdz-session (+ integration in aetherdz-core jobs NOT yet)
+## Crate: aether-session (+ integration in aether-core jobs NOT yet)
 Public API (3-5 items):
 - `Session::create() -> SessionId` (generate id: same scheme as TS — check session.ts exact format)
 - `Session::append(role, content, usage) -> Result<()>` (atomic append via core's fs::atomic_write or append-only write)
@@ -30,8 +30,8 @@ Public API (3-5 items):
 4. ledger totals math correct across 2 sessions
 
 ## Integration with existing Phase 0 crates
-- Uses `aetherdz-core` (Error enum, fs helpers, config for dir).
-- New CLI surface (extend aetherdz-cli clap): `aether sessions list|show|delete|resume|rename` + `aether recall "<phrase>"`.
+- Uses `aether-core` (Error enum, fs helpers, config for dir).
+- New CLI surface (extend aether-cli clap): `aether sessions list|show|delete|resume|rename` + `aether recall "<phrase>"`.
 - Reuse provider from Phase 0 for an actual title if requested later — NOT now (heuristic only).
 
 ## Security gates (bugbounty-secure-coding checklist)

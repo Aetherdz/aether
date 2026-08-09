@@ -1,5 +1,5 @@
 /* ============================================================
-   aetherdz — design tokens (DESIGN.md §2–§4)
+   Aether — design tokens (DESIGN.md §2–§4)
    Light black & white mono aesthetic · jcode.sh discipline
    ============================================================ */
 
@@ -71,6 +71,17 @@
 * { box-sizing: border-box; }
 
 html { scroll-behavior: smooth; }
+
+:root { color-scheme: light; }
+
+html {
+  scroll-padding-top: 96px;
+}
+
+::selection {
+  background: var(--text-primary);
+  color: var(--surface-primary);
+}
 
 body {
   margin: 0;

@@ -1,0 +1,23 @@
+[package]
+name = "aether-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aetherdz command-line interface (binary: aether)"
+
+[[bin]]
+name = "aether"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../aether-core" }
+aether-provider = { path = "../aether-provider" }
+aether-session = { path = "../aether-session" }
+aether-sync = { path = "../aether-sync" }
+aether-tui = { path = "../aether-tui" }
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+futures.workspace = true
+rustyline.workspace = true

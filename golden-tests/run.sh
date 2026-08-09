@@ -5,7 +5,7 @@ set -uo pipefail
 
 # ---- binary ---------------------------------------------------------------
 # CI points here via AETHER_BIN; defaults to the local Rust debug build.
-AETHER_BIN="${AETHER_BIN:-/tmp/opencode/aetherdz-target/debug/aether}"
+AETHER_BIN="${AETHER_BIN:-/tmp/opencode/aether-target/debug/aether}"
 if [ ! -x "$AETHER_BIN" ]; then
   echo "ERROR: aether binary not found or not executable: $AETHER_BIN" >&2
   echo "       Set AETHER_BIN=/path/to/aether (or build the debug binary)." >&2

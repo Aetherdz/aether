@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/aetherdz-core",
-    "crates/aetherdz-provider",
-    "crates/aetherdz-session",
-    "crates/aetherdz-sync",
-    "crates/aetherdz-mcp",
-    "crates/aetherdz-cli",
-    "crates/aetherdz-tui",
+    "crates/aether-core",
+    "crates/aether-provider",
+    "crates/aether-session",
+    "crates/aether-sync",
+    "crates/aether-mcp",
+    "crates/aether-cli",
+    "crates/aether-tui",
 ]
 
 [workspace.package]

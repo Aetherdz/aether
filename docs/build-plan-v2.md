@@ -5,15 +5,15 @@
 
 | Pattern | Source file | What we adopt | Phase |
 |---|---|---|---|
-| **One generic OpenAI-compatible client** (config: base_url+models+api_key), NOT one client per provider | `aichat/src/client/openai_compatible.rs` (162 LOC) | `aetherdz-provider::providers::compatible` — 8+ providers become config rows, not code | 0 |
+| **One generic OpenAI-compatible client** (config: base_url+models+api_key), NOT one client per provider | `aichat/src/client/openai_compatible.rs` (162 LOC) | `aether-provider::providers::compatible` — 8+ providers become config rows, not code | 0 |
 | **reasoning_content in compatible client** (aichat gap: only openai.rs:138 has it) | `aichat/src/client/openai.rs:138,358` + our verified zen/deepseek streams | `StreamEvent::Reasoning` handled in compatible path — our edge over aichat | 0 |
-| **SSE event framing** — chunk assembly, finish_reason, per-provider stream events | `aichat/src/client/stream.rs` (296 ln) | `aetherdz-provider::stream::SseParser` — unit-tested framing | 0 |
+| **SSE event framing** — chunk assembly, finish_reason, per-provider stream events | `aichat/src/client/stream.rs` (296 ln) | `aether-provider::stream::SseParser` — unit-tested framing | 0 |
 | **Agent loop events** — RunnerEvent enum (ToolResult/Status/MessagesUpdated/Done/Error) | `agentive/lib/src/runner.rs` | Maps 1:1 to TuiEvent bridge (TS tui/bridge.ts) | 4 |
-| **Context trimming/summarization** — TS never did this; beats old TS aether | `agentive/lib/src/context.rs` | `aetherdz-core::context` behind `memory` feature (gated) | 4/5 |
-| **CancellationToken** — matches TS Esc/Ctrl+C abort | `agentive/lib/src/cancel.rs` (tokio_util) | `aetherdz-core::cancel` | 0 (chat abort) |
-| **Tool-call accumulation across SSE chunks** — partial JSON args | `agentive/lib/src/providers/sse.rs` + `agent-code/crates/lib/src/llm/` | `aetherdz-provider::tool_acc` | 4 |
-| **Path sandbox + permission allow/deny** — for our tools/isInside+assertInside | `agent-code/crates/lib/src/sandbox/` + `permissions/` | `aetherdz-tools::sandbox` (canonicalize, deny .., symlink-safe) | 4 |
-| **Skills resolution** — repo + ~/.config/aether/skills/ | `agent-code/crates/lib/src/skills/` | `aetherdz-agent::skills` | 4 |
+| **Context trimming/summarization** — TS never did this; beats old TS aether | `agentive/lib/src/context.rs` | `aether-core::context` behind `memory` feature (gated) | 4/5 |
+| **CancellationToken** — matches TS Esc/Ctrl+C abort | `agentive/lib/src/cancel.rs` (tokio_util) | `aether-core::cancel` | 0 (chat abort) |
+| **Tool-call accumulation across SSE chunks** — partial JSON args | `agentive/lib/src/providers/sse.rs` + `agent-code/crates/lib/src/llm/` | `aether-provider::tool_acc` | 4 |
+| **Path sandbox + permission allow/deny** — for our tools/isInside+assertInside | `agent-code/crates/lib/src/sandbox/` + `permissions/` | `aether-tools::sandbox` (canonicalize, deny .., symlink-safe) | 4 |
+| **Skills resolution** — repo + ~/.config/aether/skills/ | `agent-code/crates/lib/src/skills/` | `aether-agent::skills` | 4 |
 
 ## Phases v2 (same 6, refined internals)
 

@@ -1,9 +1,9 @@
-# Phase 3 — aetherdz-mcp: stdio + Streamable HTTP + SSE — Ready-to-fire spec
+# Phase 3 — aether-mcp: stdio + Streamable HTTP + SSE — Ready-to-fire spec
 *jcode weakness #1 (verified): MCP stdio-only, HTTP/SSE recognized & skipped (protocol.rs:667-676). We ship 3 transports — our edge (blueprint §9.2).*
 
 ## Reference TS (READ FIRST)
 - /home/abdozaik720/aether-cli/src/mcp.ts (273 LOC) — the current lean stdio JSON-RPC client (proto 2024-11-05), zero deps: config at ~/.config/aether/mcp.json, spawn/handshake/tools/list/call, 8s timeout, allow-list, buildMcpTools → ai-sdk tool().
-- Blueprint §4 (aetherdz-mcp), §5 (rmcp decision + the SSE gap note), §10 CLI: `aether mcp` lists servers.
+- Blueprint §4 (aether-mcp), §5 (rmcp decision + the SSE gap note), §10 CLI: `aether mcp` lists servers.
 - jcode reference (what we EXTEND): crates/jcode-base/src/mcp/protocol.rs:188-249 (config struct + is_stdio), client.rs (stdio handle).
 
 ## Stack (blueprint §5 decision — final)
@@ -11,7 +11,7 @@
 - Legacy 2024-11-05 two-endpoint HTTP+SSE: thin hand-rolled transport **only if** a config entry needs it — read rmcp docs; if rmcp covers streamable-http's SSE streaming semantics, legacy SSE is a small adapter struct implementing rmcp's Transport trait.
 - tokio, serde, reqwest 0.12 rustls.
 
-## Crate: aetherdz-mcp
+## Crate: aether-mcp
 Public API:
 - `McpClient::connect_stdio(command)` — spawn child, JSON-RPC over stdin/stdout (port TS handshake: initialize → tools/list → tools/call; 8s timeout; allowlist).
 - `McpClient::connect_streamable_http(url)` (rmcp).

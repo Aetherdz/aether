@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="site/logo.svg" width="96" height="96" alt="aetherdz logo" />
+  <img src="site/logo.svg" width="96" height="96" alt="aether logo" />
 </p>
 
-<h1 align="center">aetherdz</h1>
+<h1 align="center">Aether</h1>
 
 <p align="center">
   <b>A terminal AI coding agent in one Rust binary.</b><br/>
@@ -17,14 +17,14 @@
 
 ---
 
-Aetherdz is a **Rust port of [AETHER](https://github.com/Aetherdz/aethercode)** — the
+Aether is a **Rust port of [AETHER](https://github.com/Aetherdz/aethercode)** — the
 same UX, the same providers, the same session format, but compiled to a single
 static binary that talks to any OpenAI-compatible API. It started as a migration
 exercise and became a full agent: chat, sessions, sync, MCP, and a ratatui TUI.
 
-## Why aetherdz?
+## Why Aether?
 
-|  | aetherdz | Node-based agents |
+|  | Aether | Node-based agents |
 |---|---|---|
 | **Runtime** | One native Rust binary | Node + hundreds of MB of deps |
 | **Startup** | Instant — compiled, no interpreter | Cold start on every run |
@@ -72,7 +72,7 @@ $ aether use zen/llama-3.3-70b
 
 $ aether ask "what is the sync line-merge strategy?"
 ▸ loading index · 1,284 symbols · 96 files
-▸ aetherdz scanning aetherdz-sync …
+▸ aether scanning aether-sync …
 
 The sync crate merges lines, not files. Each block carries an origin
 fingerprint; a conflict is resolved by keeping the newer origin and
@@ -87,8 +87,8 @@ always know what a session costs before you commit to it.
 
 ### MCP server
 
-`aetherdz-mcp` speaks the Model Context Protocol over **stdio** and
-**Streamable HTTP**. Your editor, your agents, and aetherdz share one
+`aether-mcp` speaks the Model Context Protocol over **stdio** and
+**Streamable HTTP**. Your editor, your agents, and Aether share one
 context layer — sessions, recall, and sync exposed as tools.
 
 ### Sync
@@ -100,24 +100,24 @@ with origin fingerprints — concurrent edits never silently overwrite.
 
 | Crate | Role |
 |---|---|
-| `aetherdz-core` | config, errors, fs helpers |
-| `aetherdz-provider` | 19-provider registry, graceful fallbacks, SSE client |
-| `aetherdz-session` | JSONL sessions, auto-title, recall, usage ledger |
-| `aetherdz-sync` | gist/folder backends, line-level merge |
-| `aetherdz-mcp` | MCP server (stdio + Streamable HTTP) |
-| `aetherdz-tui` | ratatui terminal UI |
-| `aetherdz-cli` | the `aether` binary |
+| `aether-core` | config, errors, fs helpers |
+| `aether-provider` | 19-provider registry, graceful fallbacks, SSE client |
+| `aether-session` | JSONL sessions, auto-title, recall, usage ledger |
+| `aether-sync` | gist/folder backends, line-level merge |
+| `aether-mcp` | MCP server (stdio + Streamable HTTP) |
+| `aether-tui` | ratatui terminal UI |
+| `aether-cli` | the `aether` binary |
 
 ```
-aetherdz/
+aether/
   crates/
-    aetherdz-core/      # config, error, fs, prompt
-    aetherdz-provider/  # client, registry, model, provider
-    aetherdz-session/   # JSONL store, recall, ledger
-    aetherdz-sync/      # gist + folder backends, line merge
-    aetherdz-mcp/       # MCP stdio + Streamable HTTP server
-    aetherdz-tui/       # ratatui session list + chat
-    aetherdz-cli/       # the `aether` binary (entry point)
+    aether-core/      # config, error, fs, prompt
+    aether-provider/  # client, registry, model, provider
+    aether-session/   # JSONL store, recall, ledger
+    aether-sync/      # gist + folder backends, line merge
+    aether-mcp/       # MCP stdio + Streamable HTTP server
+    aether-tui/       # ratatui session list + chat
+    aether-cli/       # the `aether` binary (entry point)
   docs/                 # migration blueprint + per-phase specs
   golden-tests/         # verified behavior against golden outputs
 ```

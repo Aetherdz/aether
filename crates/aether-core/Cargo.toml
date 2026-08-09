@@ -1,0 +1,13 @@
+[package]
+name = "aether-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aetherdz shared types, config, prompt building, and fs utilities"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+dirs.workspace = true

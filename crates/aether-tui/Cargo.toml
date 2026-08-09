@@ -1,0 +1,17 @@
+[package]
+name = "aether-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aetherdz terminal UI — ratatui session list + chat with ctrl+P palette and mouse wheel"
+
+[dependencies]
+thiserror.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+futures.workspace = true
+tokio.workspace = true
+aether-core = { path = "../aether-core" }
+aether-session = { path = "../aether-session" }
+aether-provider = { path = "../aether-provider" }

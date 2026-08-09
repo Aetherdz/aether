@@ -31,56 +31,56 @@
 
 | File | LOC | Role | Rust port |
 |---|---|---|---|
-| `index.ts` | 9 | entry: dotenv + `cli(argv)` | `aetherdz-cli` main.rs |
+| `index.ts` | 9 | entry: dotenv + `cli(argv)` | `aether-cli` main.rs |
 | `cli.ts` | 695 | **Commander CLI — all commands** (ask/use/models/providers/swarm/agent/agents/jobs/sessions/doctor/upgrade/completions/alias/config/connect/login/logout/keys/login-device/logout-device/sync/cache/status/cost/stats/mcp/recall); TTY→TUI vs REPL | clap derive |
-| `features.ts` | 666 | Admin set: doctor, upgrade, completions, aliases, config get/set, login/logout (.env 0600), keys, status, cost, device-login orchestration, cache stats/clear, interactive `connect` | `aetherdz-cli` admin module |
-| `chat.ts` | 1129 | **Core REPL + streaming pipeline**: `streamTurn` (ai-sdk `streamText`, `stopWhen: isStepCount(8)`), token-cache, rate-limit fallback, zen reasoning-replay, `chatRepl` with 20+ slash commands, Esc/Ctrl+C abort, session ledger | `aetherdz-cli` repl + `aetherdz-core` stream |
-| `session.ts` | 220 | JSONL session store: append user/assistant/meta, auto-title, `*.title` sidecars, list/read/delete, **`recallSessions`** cross-session search, `totalsAcrossSessions` | `aetherdz-session` |
-| `sync.ts` | 294 | **Sync engine (v0.5 flagship)**: gist (GitHub API) or folder backend, `sync.json` state, device-id, bundle v1 `{v, deviceId, sessions}`, timestamp-sorted line de-dup merge (`mergeLines`), `mergeBundles`, write-new + merge-existing | `aetherdz-sync` (flagship) |
-| `mcp.ts` | 273 | **Lean stdio JSON-RPC MCP client (proto 2024-11-05), zero deps**: `~/.config/aether/mcp.json`, spawn/handshake/tools/list/call, 8s timeout, allow-list, `buildMcpTools` → ai-sdk `tool()` | `aetherdz-mcp` (stdio+http+sse) |
-| `config.ts` | 125 | Config `~/.config/aether/config.json`, defaults merge, legacy-shape normalization, `updateDefault`, self-healing normalize | `aetherdz-config` (toml) |
+| `features.ts` | 666 | Admin set: doctor, upgrade, completions, aliases, config get/set, login/logout (.env 0600), keys, status, cost, device-login orchestration, cache stats/clear, interactive `connect` | `aether-cli` admin module |
+| `chat.ts` | 1129 | **Core REPL + streaming pipeline**: `streamTurn` (ai-sdk `streamText`, `stopWhen: isStepCount(8)`), token-cache, rate-limit fallback, zen reasoning-replay, `chatRepl` with 20+ slash commands, Esc/Ctrl+C abort, session ledger | `aether-cli` repl + `aether-core` stream |
+| `session.ts` | 220 | JSONL session store: append user/assistant/meta, auto-title, `*.title` sidecars, list/read/delete, **`recallSessions`** cross-session search, `totalsAcrossSessions` | `aether-session` |
+| `sync.ts` | 294 | **Sync engine (v0.5 flagship)**: gist (GitHub API) or folder backend, `sync.json` state, device-id, bundle v1 `{v, deviceId, sessions}`, timestamp-sorted line de-dup merge (`mergeLines`), `mergeBundles`, write-new + merge-existing | `aether-sync` (flagship) |
+| `mcp.ts` | 273 | **Lean stdio JSON-RPC MCP client (proto 2024-11-05), zero deps**: `~/.config/aether/mcp.json`, spawn/handshake/tools/list/call, 8s timeout, allow-list, `buildMcpTools` → ai-sdk `tool()` | `aether-mcp` (stdio+http+sse) |
+| `config.ts` | 125 | Config `~/.config/aether/config.json`, defaults merge, legacy-shape normalization, `updateDefault`, self-healing normalize | `aether-config` (toml) |
 | `render.ts` | 138 | Box-drawing `box()`, wrap, divider, REPL header, promptTag, statusIndicator, usageSummary | ratatui widgets |
-| `prompt.ts` | 6 | Shared `SYSTEM_PROMPT` | `aetherdz-core` prompt |
-| `defaults.ts` | 2 | `DEFAULT_PROVIDER="zen"`, `DEFAULT_MODEL="deepseek-v4-flash-free"` | `aetherdz-provider` consts |
+| `prompt.ts` | 6 | Shared `SYSTEM_PROMPT` | `aether-core` prompt |
+| `defaults.ts` | 2 | `DEFAULT_PROVIDER="zen"`, `DEFAULT_MODEL="deepseek-v4-flash-free"` | `aether-provider` consts |
 | `version.ts` | 1 | `VERSION="0.5.0"` | `env!("CARGO_PKG_VERSION")` |
 | `package-meta.ts` | 27 | Reads package.json from disk | `env!` |
-| `fs-util.ts` | 5 | `ensureDir` | `aetherdz-core` fs |
+| `fs-util.ts` | 5 | `ensureDir` | `aether-core` fs |
 
 **`agents/` (4):**
 
 | File | LOC | Role | Rust port |
 |---|---|---|---|
-| `index.ts` | 103 | `runOne`, `runTask` (route → planner split → parallel/single → summary), `printAgents` | `aetherdz-agent` |
-| `registry.ts` | 167 | **6 agent profiles**: explore, secure-coder, writer, critic (read-only), planner, default | `aetherdz-agent` |
-| `router.ts` | 29 | Keyword-scoring router (hashtag count, forced id wins) | `aetherdz-agent` |
-| `executor.ts` | 391 | Agent runner + **jobs subsystem**: `resolveSkills` (repo + `~/.config/aether/skills/`), `runSubAgent`, `runSubAgentsParallel` (bounded pool, max 4), JSON job files in `~/.aether/jobs/`, `runAgentBackground`, `waitForJob` | `aetherdz-agent` + `aetherdz-core` jobs |
+| `index.ts` | 103 | `runOne`, `runTask` (route → planner split → parallel/single → summary), `printAgents` | `aether-agent` |
+| `registry.ts` | 167 | **6 agent profiles**: explore, secure-coder, writer, critic (read-only), planner, default | `aether-agent` |
+| `router.ts` | 29 | Keyword-scoring router (hashtag count, forced id wins) | `aether-agent` |
+| `executor.ts` | 391 | Agent runner + **jobs subsystem**: `resolveSkills` (repo + `~/.config/aether/skills/`), `runSubAgent`, `runSubAgentsParallel` (bounded pool, max 4), JSON job files in `~/.aether/jobs/`, `runAgentBackground`, `waitForJob` | `aether-agent` + `aether-core` jobs |
 
-**`auth/` (3):** `cache.ts` 117 (SHA-256 content-addressed token cache, TTL 7d, 500 entries/64MB LRU, reasoning replay), `fallback.ts` 91 (15 rate-limit patterns, chain ollama→gemini-2.5-flash→keyed providers, `withFallback`), `device.ts` 200 (OAuth 2.0 device grant RFC 8628 for GitHub/Google, token store 0600) → `aetherdz-auth`.
+**`auth/` (3):** `cache.ts` 117 (SHA-256 content-addressed token cache, TTL 7d, 500 entries/64MB LRU, reasoning replay), `fallback.ts` 91 (15 rate-limit patterns, chain ollama→gemini-2.5-flash→keyed providers, `withFallback`), `device.ts` 200 (OAuth 2.0 device grant RFC 8628 for GitHub/Google, token store 0600) → `aether-auth`.
 
-**`providers/` (2):** `models.ts` 152 (static model lists for 19 providers, `ZEN_FREE_MODELS` 9 no-key, `fetchZenModels` live fetch + 10-min cache), `registry.ts` 485 (19 built-in providers via ai-sdk factories: zen/openai/anthropic/google/deepseek/openrouter/ollama/groq/mistral/xai/cerebras/togetherai/fireworks/perplexity/moonshot/minimax/huggingface/lmstudio/github + customs; `resolveDefault` graceful fallbacks) → `aetherdz-provider`.
+**`providers/` (2):** `models.ts` 152 (static model lists for 19 providers, `ZEN_FREE_MODELS` 9 no-key, `fetchZenModels` live fetch + 10-min cache), `registry.ts` 485 (19 built-in providers via ai-sdk factories: zen/openai/anthropic/google/deepseek/openrouter/ollama/groq/mistral/xai/cerebras/togetherai/fireworks/perplexity/moonshot/minimax/huggingface/lmstudio/github + customs; `resolveDefault` graceful fallbacks) → `aether-provider`.
 
-**`swarm/` (2):** `orchestrator.ts` 154 (`planTask` JSON subtask plan, ≤4 subtasks, parallel bounded workers), `worktree.ts` 94 (git worktree isolation, temp-dir `aether-worktrees`) → `aetherdz-swarm` (Phase 5).
+**`swarm/` (2):** `orchestrator.ts` 154 (`planTask` JSON subtask plan, ≤4 subtasks, parallel bounded workers), `worktree.ts` 94 (git worktree isolation, temp-dir `aether-worktrees`) → `aether-swarm` (Phase 5).
 
-**`tools/` (3):** `files.ts` 173 (`read_file`/`write_file`/`list_dir`/`grep_files`, **cwd path sandboxing** `isInside`/`assertInside`), `bash.ts` 59 (`run_bash` `/bin/bash -lc`, timeout 30s/300s, 4MB cap, **always y/n confirm, denied non-TTY**), `web.ts` 48 (`web_fetch` GET, 15s timeout, 12k truncation) → `aetherdz-tools`.
+**`tools/` (3):** `files.ts` 173 (`read_file`/`write_file`/`list_dir`/`grep_files`, **cwd path sandboxing** `isInside`/`assertInside`), `bash.ts` 59 (`run_bash` `/bin/bash -lc`, timeout 30s/300s, 4MB cap, **always y/n confirm, denied non-TTY**), `web.ts` 48 (`web_fetch` GET, 15s timeout, 12k truncation) → `aether-tools`.
 
-**`tui/` (5):** `index.tsx` 49 (Ink render entry), `app.tsx` 1098 (**full-screen Ink chat UI**: gradient wordmark, scrollable transcript, right sidebar ≥118 cols with live token ledger, input panel, slash commands w/ prefix completion, **Ctrl+P history palette**, **Alt+M model picker**, **hand-rolled mouse-wheel scroller**), `bridge.ts` 171 (shared streaming bridge, `emit: (TuiEvent)` callback, never writes stdout), `text.ts` 46 (newline-preserving wrap + ANSI-aware clip), `mouse.ts` 75 (hand-rolled X10/SGR-1006 wheel decoding) → `aetherdz-tui` (ratatui).
+**`tui/` (5):** `index.tsx` 49 (Ink render entry), `app.tsx` 1098 (**full-screen Ink chat UI**: gradient wordmark, scrollable transcript, right sidebar ≥118 cols with live token ledger, input panel, slash commands w/ prefix completion, **Ctrl+P history palette**, **Alt+M model picker**, **hand-rolled mouse-wheel scroller**), `bridge.ts` 171 (shared streaming bridge, `emit: (TuiEvent)` callback, never writes stdout), `text.ts` 46 (newline-preserving wrap + ANSI-aware clip), `mouse.ts` 75 (hand-rolled X10/SGR-1006 wheel decoding) → `aether-tui` (ratatui).
 
-**`ui/` (2):** `theme.ts` 75 (brand palette: bgNavy `#0b1120`, cyan `#22d3ee`, amber/green/red/gray; ANSI helpers), `banner.ts` 38 (violet→cyan gradient wordmark) → `aetherdz-tui` style module.
+**`ui/` (2):** `theme.ts` 75 (brand palette: bgNavy `#0b1120`, cyan `#22d3ee`, amber/green/red/gray; ANSI helpers), `banner.ts` 38 (violet→cyan gradient wordmark) → `aether-tui` style module.
 
 ### 2.2 Feature-by-feature port notes
 
-1. **8 providers via @ai-sdk** (openai, openai-compatible, anthropic, google, ollama + 14 more) → one `aetherdz-provider` crate, feature-gated per provider, all speaking OpenAI-compatible chat-completions wire format + SSE streaming. Port the ai-sdk *abstraction* (provider trait + stream adapter), not the SDK. Copy jcode's `jcode-provider-core` trait pattern (see §3.2).
-2. **Sessions w/ auto-title** → `aetherdz-session`: JSONL per session (see §5 storage decision), auto-title from first message (cheap heuristic, no LLM call for v1).
-3. **Recall cross-session memory** → `aetherdz-session` recall module: case-insensitive keyword search over session JSONL (port `recallSessions` semantics); optional embeddings behind `memory` feature (jcode-embedding pattern, gated).
-4. **Sync push/pull via gist/folder with line-merge** → `aetherdz-sync` (flagship): gist backend (reqwest + GitHub API) + folder backend (plain dir), line-level 3-way merge (reuse `similar` crate like jcode does).
-5. **MCP client** → `aetherdz-mcp`: stdio (tokio child process) + Streamable HTTP (rmcp) + legacy SSE (thin hand-rolled transport). See §5.
-6. **Agents registry** → `aetherdz-agent`: registry + router + executor. Port the TS registry semantics (6 profiles, keyword routing, skills injection).
-7. **Jobs** → `aetherdz-core` jobs module: tokio task registry with JSON status files (port `runAgentBackground`/`waitForJob`).
-8. **Stats/ledger** → `aetherdz-session` stats module: token/usage ledger per session, JSONL meta lines (port `totalsAcrossSessions`).
-9. **readline REPL + Ink TUI** → `aetherdz-cli` repl (rustyline) + `aetherdz-tui` (ratatui 0.30 + crossterm 0.29, matching jcode's stack). Mouse wheel + ctrl+p palette overlay per user's prior wishes.
-10. **Auth (device flow, cache, fallback)** → `aetherdz-auth`: RFC 8628 device flow via reqwest, token cache with 0600 perms (port jcode-storage's `write_text_secret` pattern), rate-limit fallback chain.
-11. **Zen live models** → `aetherdz-provider`: `fetchZenModels` live fetch + static fallback + free/paid split.
-12. **Swarm + worktree** → `aetherdz-swarm` (Phase 5): plan→parallel subagents, git worktree isolation.
+1. **8 providers via @ai-sdk** (openai, openai-compatible, anthropic, google, ollama + 14 more) → one `aether-provider` crate, feature-gated per provider, all speaking OpenAI-compatible chat-completions wire format + SSE streaming. Port the ai-sdk *abstraction* (provider trait + stream adapter), not the SDK. Copy jcode's `jcode-provider-core` trait pattern (see §3.2).
+2. **Sessions w/ auto-title** → `aether-session`: JSONL per session (see §5 storage decision), auto-title from first message (cheap heuristic, no LLM call for v1).
+3. **Recall cross-session memory** → `aether-session` recall module: case-insensitive keyword search over session JSONL (port `recallSessions` semantics); optional embeddings behind `memory` feature (jcode-embedding pattern, gated).
+4. **Sync push/pull via gist/folder with line-merge** → `aether-sync` (flagship): gist backend (reqwest + GitHub API) + folder backend (plain dir), line-level 3-way merge (reuse `similar` crate like jcode does).
+5. **MCP client** → `aether-mcp`: stdio (tokio child process) + Streamable HTTP (rmcp) + legacy SSE (thin hand-rolled transport). See §5.
+6. **Agents registry** → `aether-agent`: registry + router + executor. Port the TS registry semantics (6 profiles, keyword routing, skills injection).
+7. **Jobs** → `aether-core` jobs module: tokio task registry with JSON status files (port `runAgentBackground`/`waitForJob`).
+8. **Stats/ledger** → `aether-session` stats module: token/usage ledger per session, JSONL meta lines (port `totalsAcrossSessions`).
+9. **readline REPL + Ink TUI** → `aether-cli` repl (rustyline) + `aether-tui` (ratatui 0.30 + crossterm 0.29, matching jcode's stack). Mouse wheel + ctrl+p palette overlay per user's prior wishes.
+10. **Auth (device flow, cache, fallback)** → `aether-auth`: RFC 8628 device flow via reqwest, token cache with 0600 perms (port jcode-storage's `write_text_secret` pattern), rate-limit fallback chain.
+11. **Zen live models** → `aether-provider`: `fetchZenModels` live fetch + static fallback + free/paid split.
+12. **Swarm + worktree** → `aether-swarm` (Phase 5): plan→parallel subagents, git worktree isolation.
 
 ---
 
@@ -114,24 +114,24 @@
 
 ## 4. TARGET RUST WORKSPACE DESIGN (~24 crates)
 
-**Naming:** `aetherdz-*` prefix (all names verified AVAILABLE on crates.io Aug 2026; `aether`, `aether-cli`, `aether-core`, `aether-tui`, `aether-sdk` are taken). Binary name stays `aether`.
+**Naming:** `aether-*` prefix (all names verified AVAILABLE on crates.io Aug 2026; `aether`, `aether-cli`, `aether-core`, `aether-tui`, `aether-sdk` are taken). Binary name stays `aether`.
 
 ```
-aetherdz/                      # workspace root
+aether/                      # workspace root
 ├── Cargo.toml                 # workspace, shared deps, release profile
 ├── crates/
-│   ├── aetherdz-core/         # shared types, config, prompt, jobs, fs
-│   ├── aetherdz-provider/      # ONE crate, feature-gated providers
-│   ├── aetherdz-session/       # sessions, auto-title, recall, stats/ledger
-│   ├── aetherdz-sync/          # FLAGSHIP: gist/folder sync + line-merge
-│   ├── aetherdz-mcp/           # MCP client: stdio + streamable-http + sse
-│   ├── aetherdz-tools/         # bash/files/web tools
-│   ├── aetherdz-agent/         # agent registry + executor + router
-│   ├── aetherdz-auth/          # device flow, token cache, fallback
-│   ├── aetherdz-tui/           # ratatui TUI (mouse wheel, ctrl+p palette)
-│   ├── aetherdz-cli/           # clap CLI + REPL
-│   ├── aetherdz-sdk/           # library API (for embedding)
-│   └── aetherdz-swarm/         # (later) swarm orchestration
+│   ├── aether-core/         # shared types, config, prompt, jobs, fs
+│   ├── aether-provider/      # ONE crate, feature-gated providers
+│   ├── aether-session/       # sessions, auto-title, recall, stats/ledger
+│   ├── aether-sync/          # FLAGSHIP: gist/folder sync + line-merge
+│   ├── aether-mcp/           # MCP client: stdio + streamable-http + sse
+│   ├── aether-tools/         # bash/files/web tools
+│   ├── aether-agent/         # agent registry + executor + router
+│   ├── aether-auth/          # device flow, token cache, fallback
+│   ├── aether-tui/           # ratatui TUI (mouse wheel, ctrl+p palette)
+│   ├── aether-cli/           # clap CLI + REPL
+│   ├── aether-sdk/           # library API (for embedding)
+│   └── aether-swarm/         # (later) swarm orchestration
 └── aether/                     # root binary crate (thin)
 ```
 
@@ -139,18 +139,18 @@ aetherdz/                      # workspace root
 
 | Crate | Responsibility | Key deps (version) | Public API (3–5 items) | Port vs New |
 |---|---|---|---|---|
-| `aetherdz-core` | shared types, prompt building, fs utils, jobs queue | serde 1, serde_json 1, anyhow 1, thiserror 2, tokio 1 | `Prompt::build()`, `Job::spawn()`, `fs::atomic_write()`, `Error` enum | Port (from TS + jcode-storage patterns) |
-| `aetherdz-provider` | 8+ providers, feature-gated; OpenAI-compatible wire format; SSE streaming | reqwest 0.12 (rustls), serde, futures 0.3, tokio | `Provider::chat()`, `Provider::stream()`, `ModelCatalog::resolve()`, `ProviderRegistry::get()` | Port (from TS + jcode-provider-core pattern) |
-| `aetherdz-session` | session store, auto-title, recall, stats/ledger | serde_json, chrono 0.4, dirs 5 | `Session::create()`, `Session::append()`, `Session::title()`, `Recall::search()`, `Ledger::record()` | Port (TS session.ts) |
-| `aetherdz-sync` | **gist/folder sync + line-merge** | reqwest, serde_json, similar 2, git2 (folder backend) | `Sync::push()`, `Sync::pull()`, `Merge::three_way()`, `Backend::Gist/Folder` | **New (flagship)** |
-| `aetherdz-mcp` | MCP client stdio+http+sse | rmcp (official), tokio, reqwest | `McpClient::connect_stdio()`, `connect_http()`, `connect_sse()`, `list_tools()`, `call_tool()` | Port+extend (jcode mcp + rmcp) |
-| `aetherdz-tools` | bash/files/web tools | tokio, reqwest, `similar` | `BashTool::run()`, `FileTool::read/write()`, `WebTool::fetch()` | Port (TS tools/) |
-| `aetherdz-agent` | registry, executor, router | aetherdz-core, aetherdz-provider | `Agent::register()`, `Agent::execute()`, `Router::route()` | Port (TS agents/) |
-| `aetherdz-auth` | device flow, cache, fallback | reqwest, serde | `Auth::device_flow()`, `Auth::cached_token()`, `Auth::refresh()` | Port (TS auth/) |
-| `aetherdz-tui` | ratatui TUI, mouse wheel, ctrl+p palette | ratatui 0.30, crossterm 0.29 | `App::run()`, `Palette::toggle()`, `MouseWheel::scroll()`, `render()` | New (from Ink) |
-| `aetherdz-cli` | clap CLI, REPL | clap 4, rustyline 15 | `Cli::parse()`, `repl::run()`, `cmd::chat()`, `cmd::sync()` | Port (TS cli.ts) |
-| `aetherdz-sdk` | library API | aetherdz-core | `Aether::new()`, `Aether::chat()`, `Aether::sync()` | New |
-| `aetherdz-swarm` | (later) swarm | tokio | `Swarm::spawn()`, `Worktree::create()` | Port (TS swarm/) |
+| `aether-core` | shared types, prompt building, fs utils, jobs queue | serde 1, serde_json 1, anyhow 1, thiserror 2, tokio 1 | `Prompt::build()`, `Job::spawn()`, `fs::atomic_write()`, `Error` enum | Port (from TS + jcode-storage patterns) |
+| `aether-provider` | 8+ providers, feature-gated; OpenAI-compatible wire format; SSE streaming | reqwest 0.12 (rustls), serde, futures 0.3, tokio | `Provider::chat()`, `Provider::stream()`, `ModelCatalog::resolve()`, `ProviderRegistry::get()` | Port (from TS + jcode-provider-core pattern) |
+| `aether-session` | session store, auto-title, recall, stats/ledger | serde_json, chrono 0.4, dirs 5 | `Session::create()`, `Session::append()`, `Session::title()`, `Recall::search()`, `Ledger::record()` | Port (TS session.ts) |
+| `aether-sync` | **gist/folder sync + line-merge** | reqwest, serde_json, similar 2, git2 (folder backend) | `Sync::push()`, `Sync::pull()`, `Merge::three_way()`, `Backend::Gist/Folder` | **New (flagship)** |
+| `aether-mcp` | MCP client stdio+http+sse | rmcp (official), tokio, reqwest | `McpClient::connect_stdio()`, `connect_http()`, `connect_sse()`, `list_tools()`, `call_tool()` | Port+extend (jcode mcp + rmcp) |
+| `aether-tools` | bash/files/web tools | tokio, reqwest, `similar` | `BashTool::run()`, `FileTool::read/write()`, `WebTool::fetch()` | Port (TS tools/) |
+| `aether-agent` | registry, executor, router | aether-core, aether-provider | `Agent::register()`, `Agent::execute()`, `Router::route()` | Port (TS agents/) |
+| `aether-auth` | device flow, cache, fallback | reqwest, serde | `Auth::device_flow()`, `Auth::cached_token()`, `Auth::refresh()` | Port (TS auth/) |
+| `aether-tui` | ratatui TUI, mouse wheel, ctrl+p palette | ratatui 0.30, crossterm 0.29 | `App::run()`, `Palette::toggle()`, `MouseWheel::scroll()`, `render()` | New (from Ink) |
+| `aether-cli` | clap CLI, REPL | clap 4, rustyline 15 | `Cli::parse()`, `repl::run()`, `cmd::chat()`, `cmd::sync()` | Port (TS cli.ts) |
+| `aether-sdk` | library API | aether-core | `Aether::new()`, `Aether::chat()`, `Aether::sync()` | New |
+| `aether-swarm` | (later) swarm | tokio | `Swarm::spawn()`, `Worktree::create()` | Port (TS swarm/) |
 
 ---
 
@@ -208,17 +208,17 @@ aetherdz/                      # workspace root
 
 **Buy vs build:**
 - **BUY (reuse, MIT):** jcode crates are MIT (`LICENSE`). Reuse patterns from `jcode-storage`, `jcode-fuzzy`, `jcode-provider-core`, `jcode-base/src/mcp`. Also `rmcp` (official MCP SDK), `ratatui`, `crossterm`, `reqwest`, `similar`.
-- **BUILD (our IP):** `aetherdz-sync` (line-merge sync — jcode has nothing), the provider registry (8+ providers), the TUI palette overlay, the SDK.
+- **BUILD (our IP):** `aether-sync` (line-merge sync — jcode has nothing), the provider registry (8+ providers), the TUI palette overlay, the SDK.
 
 ---
 
 ## 9. PRIORITY RANKING — 5 highest-ROI first targets
 
-1. **`aetherdz-sync` (gist/folder + line-merge)** — jcode has ZERO cross-device sync; this is our flagship differentiator and the #1 reason a user switches. Highest ROI.
-2. **`aetherdz-mcp` with stdio + Streamable HTTP + SSE** — jcode explicitly skips HTTP/SSE (`protocol.rs:667-676`); the MCP industry is moving to Streamable HTTP. Second-highest ROI.
-3. **`aetherdz-provider` (8+ providers, feature-gated)** — the core value; without it nothing else matters. Third.
-4. **`aetherdz-session` (auto-title, recall, stats)** — the daily-driver UX; jcode has sessions but no cross-device story. Fourth.
-5. **`aetherdz-tui` (ratatui, mouse wheel, ctrl+p palette)** — the visible differentiator; Ink parity is a known weak spot. Fifth.
+1. **`aether-sync` (gist/folder + line-merge)** — jcode has ZERO cross-device sync; this is our flagship differentiator and the #1 reason a user switches. Highest ROI.
+2. **`aether-mcp` with stdio + Streamable HTTP + SSE** — jcode explicitly skips HTTP/SSE (`protocol.rs:667-676`); the MCP industry is moving to Streamable HTTP. Second-highest ROI.
+3. **`aether-provider` (8+ providers, feature-gated)** — the core value; without it nothing else matters. Third.
+4. **`aether-session` (auto-title, recall, stats)** — the daily-driver UX; jcode has sessions but no cross-device story. Fourth.
+5. **`aether-tui` (ratatui, mouse wheel, ctrl+p palette)** — the visible differentiator; Ink parity is a known weak spot. Fifth.
 
 ---
 
@@ -253,10 +253,10 @@ Verified from `/home/abdozaik720/aether-cli/README.md` (lines 127–164). Every 
 
 ## 11. DISTRIBUTION (jcode's npm-native pattern, adapted)
 
-jcode ships native binaries via npm (`sdk/npm/{darwin,linux,win32}-{arm64,x64}`) + a TS SDK (`sdk/typescript/`). For aetherdz:
-- **Primary:** `cargo install aetherdz-cli` + GitHub Releases (prebuilt binaries per platform).
-- **Parity:** npm package `aetherdz` that downloads the right native binary (keeps `npm i -g aetherdz` working for existing users).
-- **SDK:** `aetherdz-sdk` crate for embedding; TS SDK later if demand.
+jcode ships native binaries via npm (`sdk/npm/{darwin,linux,win32}-{arm64,x64}`) + a TS SDK (`sdk/typescript/`). For Aether:
+- **Primary:** `cargo install aether-cli` + GitHub Releases (prebuilt binaries per platform).
+- **Parity:** npm package `aether` that downloads the right native binary (keeps `npm i -g aether` working for existing users).
+- **SDK:** `aether-sdk` crate for embedding; TS SDK later if demand.
 
 ---
 
@@ -285,5 +285,5 @@ jcode ships native binaries via npm (`sdk/npm/{darwin,linux,win32}-{arm64,x64}`)
 **"AETHER وحده"** — the product name is **aether** (single word). No rebrand.
 - Binary name: `aether` (already in Phase 0).
 - CLI identity / website / docs: `aether` — keep existing branding, do NOT invent a new name.
-- Internal crates may use `aetherdz-*` prefix (crates.io availability) — invisible to users.
+- Internal crates may use `aether-*` prefix (crates.io availability) — invisible to users.
 - Website (aether-site): keep name, optionally refine design later — NOT a rename task.
