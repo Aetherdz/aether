@@ -8,12 +8,12 @@
 <meta property="og:title" content="Aether — Rust terminal AI agent">
 <meta property="og:description" content="A terminal AI coding agent in one Rust binary. Talk to your codebase from the shell.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://aetherdz.github.io/aether/logo.svg">
+<meta property="og:image" content="https://aetherdz.github.io/aether/assets/img/logo.svg">
 <meta name="theme-color" content="#FFFFFF">
-<link rel="icon" type="image/svg+xml" href="/logo.svg">
-<link rel="preload" href="/fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/jetbrains-mono-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/svg+xml" href="/assets/img/logo.svg">
+<link rel="preload" href="/assets/fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/jetbrains-mono-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/css/style.css">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -46,13 +46,13 @@
     <p class="lead">Aether is a keyboard-first AI agent that lives in your shell. A TUI chat over your code, an MCP server for your tools, and gist or folder sync — in one native Rust binary. No Node runtime. No browser tab. No noise.</p>
     <div class="install" id="install">
       <div class="install-row">
-        <code class="install-code" id="install-code">cargo install aether-cli</code>
+        <code class="install-code" id="install-code">curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash</code>
         <button class="copy-btn" id="copy-btn" type="button" aria-label="Copy install command">
           <svg class="icon icon-copy" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 5V3.5a1 1 0 0 0-1-1H3.5a1 1 0 0 0-1 1V10a1 1 0 0 0 1 1H5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           <svg class="icon icon-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
-      <p class="install-meta" aria-live="polite">crates: aether-tui · aether-mcp · aether-sync — MIT license</p>
+      <p class="install-meta" aria-live="polite">one native binary · no Rust toolchain · no Node runtime — MIT license</p>
     </div>
     <ul class="badges" aria-label="Highlights">
       <li>100% Rust</li>
@@ -69,21 +69,9 @@
         <span class="dot dot-red" aria-hidden="true"></span>
         <span class="dot dot-yellow" aria-hidden="true"></span>
         <span class="dot dot-green" aria-hidden="true"></span>
-        <span class="terminal-path">~/code/aether</span>
+        <span class="terminal-path">aether tui</span>
       </div>
-      <pre class="terminal-body" tabindex="0"><span class="t-dim"># start a session over your repo</span>
-<span class="t-prompt">$</span> aether
-<span class="t-dim">▸ loading index · 1,284 symbols · 96 files</span>
-
-<span class="t-prompt">$</span> what is the sync line-merge strategy?
-<span class="t-dim">▸ aether</span> scanning aether-sync …
-
-<span class="t-sys">aether</span> <span class="t-plain">The sync crate merges lines, not files. Each block
-carries an origin fingerprint; a conflict is resolved by
-keeping the newer origin and flagging the older one for
-review — so concurrent edits never silently overwrite.</span>
-
-<span class="t-prompt">$</span> <span class="t-cursor">▊</span></pre>
+      <img class="terminal-gif" src="/assets/img/demo.gif" alt="Aether TUI demo — session list, chat transcript, and live plan → build → route agent screen" loading="lazy" width="1150" height="640">
     </figure>
   </section>
 
@@ -94,12 +82,11 @@ review — so concurrent edits never silently overwrite.</span>
       <article class="step">
         <div class="step-head">
           <span class="step-num">01</span>
-          <h3 class="step-title">Clone &amp; build</h3>
+          <h3 class="step-title">Install the binary</h3>
         </div>
-        <p>One native Rust binary. No Node runtime, no browser tab.</p>
-        <code class="step-code"><span class="c-comment"># requires Rust 1.97+</span>
-<span class="c-cmd">$</span> git clone https://github.com/Aetherdz/aether
-<span class="c-cmd">$</span> cd aether && cargo build --release</code>
+        <p>One prebuilt native binary for your OS. No Rust toolchain, no Node, nothing else.</p>
+        <code class="step-code"><span class="c-comment"># downloads + verifies SHA-256, installs to ~/.local/bin</span>
+<span class="c-cmd">$</span> curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash</code>
       </article>
       <article class="step">
         <div class="step-head">
@@ -108,16 +95,16 @@ review — so concurrent edits never silently overwrite.</span>
         </div>
         <p>The free zen provider works out of the box — no API key needed.</p>
         <code class="step-code"><span class="c-comment"># ask a one-shot question</span>
-<span class="c-cmd">$</span> ./target/release/aether ask "explain this repo"</code>
+<span class="c-cmd">$</span> aether ask "explain this repo"</code>
       </article>
       <article class="step">
         <div class="step-head">
           <span class="step-num">03</span>
           <h3 class="step-title">Or open the TUI</h3>
         </div>
-        <p>Interactive chat with Ctrl+P model palette and a live token ledger.</p>
+        <p>Keyboard-first UI: session list, chat, and a live plan→build→route agent screen.</p>
         <code class="step-code"><span class="c-comment"># full terminal UI</span>
-<span class="c-cmd">$</span> ./target/release/aether tui</code>
+<span class="c-cmd">$</span> aether tui</code>
       </article>
     </div>
   </section>
@@ -129,7 +116,12 @@ review — so concurrent edits never silently overwrite.</span>
       <article class="feature-card">
         <p class="feature-label">tui</p>
         <h3>Session list + chat</h3>
-        <p>A ratatui interface with a Ctrl+P palette, wheel scroll, and a live token ledger. Pick a past session or start fresh — all from the keyboard.</p>
+        <p>A ratatui interface with a chrome header (model, provider, version), a tab bar (chat · agent · sessions), wheel scroll, and a live token ledger. All from the keyboard.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">agent</p>
+        <h3>Live plan → build → route</h3>
+        <p>Run the three-model agent loop straight from the TUI. Three live panels show the planner, builder, and router as they work — plan cards, todo progress, and per-step verdicts update in real time.</p>
       </article>
       <article class="feature-card">
         <p class="feature-label">mcp</p>
@@ -191,7 +183,7 @@ review — so concurrent edits never silently overwrite.</span>
 (function () {
   var btn = document.getElementById('copy-btn');
   var code = document.getElementById('install-code');
-  var text = 'cargo install aether-cli';
+  var text = 'curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash';
   var row = btn.closest('.install-row');
   btn.addEventListener('click', function () {
     function done() {
