@@ -269,7 +269,9 @@ mod tests {
     fn agent_task_and_undo_both_parse() {
         match parse(&["agent", "fix the bug"]) {
             Command::Agent {
-                task: Some(t), action: None, ..
+                task: Some(t),
+                action: None,
+                ..
             } => assert_eq!(t, "fix the bug"),
             other => panic!("expected Agent with task, got {other:?}"),
         }
@@ -298,7 +300,9 @@ mod tests {
         }
         match parse(&["agent", "fix the bug", "--resume"]) {
             Command::Agent {
-                task: Some(t), resume: true, ..
+                task: Some(t),
+                resume: true,
+                ..
             } => assert_eq!(t, "fix the bug"),
             other => panic!("expected Agent with task + --resume, got {other:?}"),
         }
@@ -307,10 +311,7 @@ mod tests {
     #[test]
     fn deprecated_aliases_still_resolve() {
         assert!(matches!(parse(&["use", "zen"]), Command::Use { .. }));
-        assert!(matches!(
-            parse(&["models", "zen"]),
-            Command::Models { .. }
-        ));
+        assert!(matches!(parse(&["models", "zen"]), Command::Models { .. }));
         assert!(matches!(parse(&["providers"]), Command::Providers));
         assert!(matches!(parse(&["recall", "auth"]), Command::Recall { .. }));
         assert!(matches!(parse(&["undo", "file.rs"]), Command::Undo { .. }));

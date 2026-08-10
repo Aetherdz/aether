@@ -39,8 +39,7 @@ fn main() -> Result<()> {
         // runtime created below (a second Runtime::new() would panic).
         Command::Tui => cmd_tui(),
         command => {
-            let rt = tokio::runtime::Runtime::new()
-                .map_err(|e| Error::Config(e.to_string()))?;
+            let rt = tokio::runtime::Runtime::new().map_err(|e| Error::Config(e.to_string()))?;
             rt.block_on(dispatch(command))
         }
     }
@@ -125,18 +124,14 @@ async fn dispatch(command: Command) -> Result<()> {
 
 /// Print a one-line deprecation notice for a renamed command.
 fn deprecate(old: &str, new: &str) {
-    eprintln!(
-        "note: `aether {old}` is deprecated; use `aether {new}` instead"
-    );
+    eprintln!("note: `aether {old}` is deprecated; use `aether {new}` instead");
 }
 
 /// `aether provider <list|models|use>` — provider management.
 async fn cmd_provider(action: ProviderAction) -> Result<()> {
     match action {
         ProviderAction::List => cmd_providers(),
-        ProviderAction::Models { provider, live } => {
-            cmd_models(provider.as_deref(), live).await
-        }
+        ProviderAction::Models { provider, live } => cmd_models(provider.as_deref(), live).await,
         ProviderAction::Use { spec } => cmd_use(&spec),
     }
 }
@@ -517,9 +512,14 @@ async fn cmd_agent(
     let route_model = route_model.unwrap_or(&model).to_string();
     let cwd = std::env::current_dir().map_err(|e| Error::Config(e.to_string()))?;
 
-    let mut agent =
-        aether_agent::Agent::new(Box::new(client), cwd.clone(), plan_model, build_model, route_model)
-            .with_iteration_cap(iterations);
+    let mut agent = aether_agent::Agent::new(
+        Box::new(client),
+        cwd.clone(),
+        plan_model,
+        build_model,
+        route_model,
+    )
+    .with_iteration_cap(iterations);
     if yes {
         agent = agent.with_yes();
     } else {
@@ -541,7 +541,8 @@ async fn cmd_agent(
             })?;
             println!(
                 "aether agent — resuming from {} ({} iterations completed)\n",
-                aether_agent::STATE_FILE, state.iteration
+                aether_agent::STATE_FILE,
+                state.iteration
             );
             agent.resume(state).await?
         }

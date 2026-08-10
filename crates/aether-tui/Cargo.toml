@@ -15,3 +15,4 @@ tokio.workspace = true
 aether-core = { path = "../aether-core" }
 aether-session = { path = "../aether-session" }
 aether-provider = { path = "../aether-provider" }
+aether-agent = { path = "../aether-agent" }

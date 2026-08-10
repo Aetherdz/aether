@@ -9,6 +9,7 @@
 
 pub mod agent;
 pub mod diff;
+pub mod observer;
 pub mod plan;
 pub mod prompts;
 pub mod route;
@@ -17,6 +18,9 @@ pub mod undo;
 
 pub use agent::{Agent, AgentResult, AgentState, AgentStopReason, Completions, STATE_FILE};
 pub use diff::{DiffLine, DiffLineKind, diff_lines, render_diff};
+pub use observer::{
+    AgentObserver, AgentPhase, ChannelObserver, FnObserver, NoopObserver, VerdictPhase,
+};
 pub use plan::Plan;
 pub use route::Verdict;
 pub use tools::{ConfirmPolicy, ToolResult, Tools};

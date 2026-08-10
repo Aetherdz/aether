@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
+use crate::observer::{AgentPhase, DynObserver, NoopObserver, VerdictPhase};
 use crate::plan::{Plan, extract_json_object, parse_plan};
 use crate::prompts::{PLAN_SYSTEM, ROUTE_SYSTEM, build_system_with_tools, render_plan};
 use crate::route::{Verdict, parse_verdict};
@@ -74,6 +75,7 @@ pub struct Agent {
     root: PathBuf,
     max_iterations: u32,
     max_build_turns: u32,
+    observer: DynObserver,
 }
 
 /// Serializable checkpoint of an in-flight agent run, written to
@@ -101,9 +103,9 @@ impl AgentState {
     pub fn load(root: &Path) -> Result<Option<Self>> {
         let path = root.join(STATE_FILE);
         match std::fs::read_to_string(&path) {
-            Ok(raw) => serde_json::from_str(&raw)
-                .map(Some)
-                .map_err(|e| Error::InvalidInput(format!("corrupt state file {}: {e}", path.display()))),
+            Ok(raw) => serde_json::from_str(&raw).map(Some).map_err(|e| {
+                Error::InvalidInput(format!("corrupt state file {}: {e}", path.display()))
+            }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
@@ -136,7 +138,19 @@ impl Agent {
             root,
             max_iterations: 6,
             max_build_turns: 12,
+            observer: std::sync::Arc::new(NoopObserver),
         }
+    }
+
+    /// Report live phase transitions to `observer` (e.g. a TUI channel).
+    /// The observer is fire-and-forget: a slow consumer never stalls the loop.
+    pub fn with_observer(mut self, observer: DynObserver) -> Self {
+        self.observer = observer;
+        self
+    }
+
+    fn emit(&self, phase: AgentPhase) {
+        self.observer.on_phase(phase);
     }
 
     pub fn with_iteration_cap(mut self, max: u32) -> Self {
@@ -169,7 +183,9 @@ impl Agent {
     ///
     /// [`resume`]: Self::resume
     pub async fn run(&self, task: &str) -> Result<AgentResult> {
+        self.emit(AgentPhase::Planning);
         let plan = self.plan(task).await?;
+        self.emit(AgentPhase::PlanReady(render_plan(&plan)));
         let state = AgentState {
             task: task.to_string(),
             plan,
@@ -203,14 +219,26 @@ impl Agent {
         let mut stagnant_streak = state.stagnant_streak;
 
         for iteration in state.iteration + 1..=self.max_iterations {
+            self.emit(AgentPhase::BuildStarted { iteration });
             let build = self.build_round(&task, &plan, &history).await?;
             tool_calls += build.tool_calls;
             final_answer = build.summary.clone();
+            self.emit(AgentPhase::BuildFinished {
+                iteration,
+                tool_calls: build.tool_calls,
+                modified: build.modified,
+                summary: build.summary.clone(),
+            });
 
             // The build model spent its whole tool budget without producing
             // a summary — there is nothing more to route on.
             if build.capped {
                 self.clear_state();
+                self.emit(AgentPhase::Finished {
+                    iterations: iteration,
+                    tool_calls,
+                    reason: AgentStopReason::BuildTurnCap,
+                });
                 return Ok(AgentResult {
                     plan,
                     iterations: iteration,
@@ -233,6 +261,11 @@ impl Agent {
             }
             if stagnant_streak >= 2 {
                 self.clear_state();
+                self.emit(AgentPhase::Finished {
+                    iterations: iteration,
+                    tool_calls,
+                    reason: AgentStopReason::Stagnation,
+                });
                 return Ok(AgentResult {
                     plan,
                     iterations: iteration,
@@ -243,10 +276,20 @@ impl Agent {
             }
             prev_plan = Some(plan.clone());
 
+            self.emit(AgentPhase::Routing { iteration });
             let verdict = self.route(&task, &plan, &build.summary, &history).await?;
+            self.emit(AgentPhase::Routed {
+                iteration,
+                verdict: verdict_phase(&verdict),
+            });
             match verdict {
                 Verdict::Done(answer) => {
                     self.clear_state();
+                    self.emit(AgentPhase::Finished {
+                        iterations: iteration,
+                        tool_calls,
+                        reason: AgentStopReason::Done,
+                    });
                     return Ok(AgentResult {
                         plan,
                         iterations: iteration,
@@ -290,6 +333,11 @@ impl Agent {
         }
 
         self.clear_state();
+        self.emit(AgentPhase::Finished {
+            iterations: self.max_iterations,
+            tool_calls,
+            reason: AgentStopReason::IterationCap,
+        });
         Ok(AgentResult {
             plan,
             iterations: self.max_iterations,
@@ -529,6 +577,14 @@ fn extract_fenced_calls(text: &str) -> Result<Vec<FencedCall>> {
     Ok(calls)
 }
 
+fn verdict_phase(verdict: &Verdict) -> VerdictPhase {
+    match verdict {
+        Verdict::Done(_) => VerdictPhase::Done,
+        Verdict::Continue(_) => VerdictPhase::Continue,
+        Verdict::Revise(_, _) => VerdictPhase::Revise,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,6 +701,62 @@ Done"#;
         assert_eq!(result.tool_calls, 1);
         assert_eq!(result.final_answer, "hello world");
         assert_eq!(result.stopped_reason, AgentStopReason::Done);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn loop_emits_phases_in_order() {
+        use crate::observer::ChannelObserver;
+        let root = temp_root("phases");
+        std::fs::write(root.join("x.txt"), "hello world").unwrap();
+        let mock = MockClient::new(vec![
+            MockClient::text(r#"{"goal":"g","steps":[{"id":1,"action":"read x.txt"}]}"#),
+            MockClient::with_tools(vec![tool_call("c1", "read_file", r#"{"path":"x.txt"}"#)]),
+            MockClient::text("file contains hello world"),
+            MockClient::text(r#"{"verdict":"done","final_answer":"hello world"}"#),
+        ]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let result = {
+            let agent = Agent::new(
+                Box::new(mock),
+                root.clone(),
+                "m".to_string(),
+                "m".to_string(),
+                "m".to_string(),
+            )
+            .with_observer(std::sync::Arc::new(ChannelObserver(tx)));
+            agent.run("read x.txt").await.unwrap()
+        };
+        assert_eq!(result.iterations, 1);
+        let phases: Vec<AgentPhase> = rx.iter().collect();
+        assert_eq!(phases[0], AgentPhase::Planning);
+        assert!(matches!(&phases[1], AgentPhase::PlanReady(text) if text.contains("goal")));
+        assert_eq!(phases[2], AgentPhase::BuildStarted { iteration: 1 });
+        assert!(matches!(
+            &phases[3],
+            AgentPhase::BuildFinished {
+                iteration: 1,
+                modified: false,
+                ..
+            }
+        ));
+        assert_eq!(phases[4], AgentPhase::Routing { iteration: 1 });
+        assert_eq!(
+            phases[5],
+            AgentPhase::Routed {
+                iteration: 1,
+                verdict: VerdictPhase::Done
+            }
+        );
+        assert!(matches!(
+            &phases[6],
+            AgentPhase::Finished {
+                iterations: 1,
+                reason: AgentStopReason::Done,
+                ..
+            }
+        ));
+        assert_eq!(phases.len(), 7);
         let _ = std::fs::remove_dir_all(&root);
     }
 

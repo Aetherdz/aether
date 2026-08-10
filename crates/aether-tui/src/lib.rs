@@ -1,12 +1,16 @@
 //! aether-tui — ratatui + crossterm terminal UI (Phase 4).
 //!
-//! Two screens:
+//! Three screens behind a shared chrome (header bar + tabs):
 //! - **Session list** — browse/rename/delete/resume sessions, arrow keys + wheel scroll.
 //! - **Chat** — transcript of the active session, live streaming, ctrl+P provider/model palette.
+//! - **Agent** — live plan → build → route loop visualization fed by the aether-agent observer.
 //!
 //! The trait surface (`Tui`, `TuiError`) from Phase 0 is preserved so downstream
 //! crates still compile against a stable contract.
 
+pub mod agent_screen;
+pub mod cards;
+pub mod chrome;
 pub mod render;
 
 use std::time::Duration;
@@ -24,6 +28,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
 };
 
+use aether_agent::ChannelObserver;
+use aether_agent::observer::DynObserver;
 use aether_core::config::load_config;
 use aether_provider::{
     ChatMessage, ChatRequest, OpenAICompatibleClient, Provider, resolve_default,
@@ -106,6 +112,8 @@ mod theme {
 enum Screen {
     Sessions,
     Chat,
+    /// Live plan -> build -> route loop visualization.
+    Agent,
     Palette,
 }
 
@@ -127,6 +135,15 @@ enum KeyAction {
     SendTurn { question: String, model: String },
 }
 
+/// Live streaming state shown on the status line above the chat input.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum ProcessingStatus {
+    #[default]
+    Idle,
+    Thinking,
+    Streaming(u64),
+}
+
 /// The full ratatui application state.
 pub struct RatatuiTui {
     screen: Screen,
@@ -141,6 +158,7 @@ pub struct RatatuiTui {
     chat_scroll: usize,
     /// Streaming buffer while a response is arriving.
     pending: Option<String>,
+    processing: ProcessingStatus,
     /// Live token counters for the active session.
     input_tokens: u64,
     output_tokens: u64,
@@ -155,6 +173,12 @@ pub struct RatatuiTui {
     totals: aether_session::Totals,
     /// The most recent background error, shown in the footer.
     last_error: Option<TuiError>,
+    /// Live state for the Agent screen (fed by the observer channel).
+    agent_state: agent_screen::AgentScreenState,
+    /// Receiver draining AgentPhase events while an agent run is live.
+    agent_rx: Option<std::sync::mpsc::Receiver<aether_agent::AgentPhase>>,
+    /// Resolved provider name, shown in the header bar.
+    provider: String,
 }
 
 impl Default for RatatuiTui {
@@ -168,6 +192,7 @@ impl Default for RatatuiTui {
             chat: Vec::new(),
             chat_scroll: 0,
             pending: None,
+            processing: ProcessingStatus::Idle,
             input_tokens: 0,
             output_tokens: 0,
             input: String::new(),
@@ -176,6 +201,9 @@ impl Default for RatatuiTui {
             palette_index: 0,
             totals: aether_session::Totals::default(),
             last_error: None,
+            agent_state: agent_screen::AgentScreenState::default(),
+            agent_rx: None,
+            provider: String::new(),
         }
     }
 }
@@ -196,6 +224,8 @@ impl RatatuiTui {
     pub fn new() -> Result<Self, TuiError> {
         let mut app = Self::default();
         app.model = default_model();
+        let config = load_config().unwrap_or_default();
+        app.provider = resolve_default(&config, None, None).provider.name.clone();
         app.refresh_sessions()?;
         Ok(app)
     }
@@ -328,19 +358,32 @@ impl RatatuiTui {
             tools: None,
         };
 
+        self.processing = ProcessingStatus::Thinking;
         let mut usage = None;
-        let stream = client
-            .stream_chat(&request)
-            .await
-            .map_err(|e| TuiError::Provider(e.to_string()))?;
+        let stream = match client.stream_chat(&request).await {
+            Ok(stream) => stream,
+            Err(e) => {
+                self.processing = ProcessingStatus::Idle;
+                return Err(TuiError::Provider(e.to_string()));
+            }
+        };
         futures::pin_mut!(stream);
         // Stream straight into the pending buffer: one allocation, no
         // per-chunk clones (a long reply used to be copied on every chunk).
         self.pending = Some(String::new());
+        let mut tokens = 0u64;
         {
             let buffer = self.pending.as_mut().expect("pending just set");
             while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|e| TuiError::Provider(e.to_string()))?;
+                let chunk = match chunk {
+                    Ok(chunk) => chunk,
+                    Err(e) => {
+                        self.processing = ProcessingStatus::Idle;
+                        return Err(TuiError::Provider(e.to_string()));
+                    }
+                };
+                tokens += 1;
+                self.processing = ProcessingStatus::Streaming(tokens);
                 if let Some(text) = &chunk.content {
                     buffer.push_str(text);
                 }
@@ -349,6 +392,7 @@ impl RatatuiTui {
                 }
             }
         }
+        self.processing = ProcessingStatus::Idle;
         let reply = self.pending.take().unwrap_or_default();
 
         if let Some(session) = &self.active {
@@ -410,9 +454,22 @@ impl RatatuiTui {
             }
             return KeyAction::Continue;
         }
+        // Tab cycles the main screens: Chat -> Agent -> Sessions -> Chat.
+        if key.code == KeyCode::Tab {
+            self.screen = match self.screen {
+                Screen::Chat => Screen::Agent,
+                Screen::Agent => Screen::Sessions,
+                _ => Screen::Chat,
+            };
+            if self.screen == Screen::Sessions {
+                let _ = self.refresh_sessions();
+            }
+            return KeyAction::Continue;
+        }
         match self.screen {
             Screen::Sessions => self.on_key_sessions(key),
             Screen::Chat => self.on_key_chat(key),
+            Screen::Agent => self.on_key_agent(key),
             Screen::Palette => self.on_key_palette(key),
         }
     }
@@ -496,6 +553,50 @@ impl RatatuiTui {
             }
             _ => KeyAction::Continue,
         }
+    }
+
+    fn on_key_agent(&mut self, key: KeyEvent) -> KeyAction {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.screen = Screen::Chat;
+                KeyAction::Continue
+            }
+            KeyCode::Enter => {
+                if self.agent_rx.is_none() {
+                    self.start_agent();
+                }
+                KeyAction::Continue
+            }
+            _ => KeyAction::Continue,
+        }
+    }
+
+    fn start_agent(&mut self) {
+        let Ok(client) = Self::client() else {
+            self.last_error = Some(TuiError::Provider("no provider configured".into()));
+            return;
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let observer: DynObserver = std::sync::Arc::new(ChannelObserver(tx));
+        let root = std::env::current_dir().unwrap_or_default();
+        let model = self.model.clone();
+        let agent = aether_agent::Agent::new(
+            Box::new(client),
+            root,
+            model.clone(),
+            model.clone(),
+            model.clone(),
+        )
+        .with_observer(observer);
+        self.agent_rx = Some(rx);
+        self.agent_state = agent_screen::AgentScreenState::default();
+        let task = self
+            .last_question()
+            .unwrap_or("a small demo task")
+            .to_string();
+        tokio::spawn(async move {
+            let _ = agent.run(&task).await;
+        });
     }
 
     fn on_key_palette(&mut self, key: KeyEvent) -> KeyAction {
@@ -584,28 +685,60 @@ impl RatatuiTui {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
+        let body = self.draw_chrome(frame, frame.area());
         match self.screen {
-            Screen::Sessions => self.draw_sessions(frame),
-            Screen::Chat => self.draw_chat(frame),
-            Screen::Palette => self.draw_palette(frame),
+            Screen::Sessions => self.draw_sessions(frame, body),
+            Screen::Chat => self.draw_chat(frame, body),
+            Screen::Agent => self.draw_agent(frame, body),
+            Screen::Palette => self.draw_palette(frame, body),
         }
     }
 
-    fn draw_sessions(&mut self, frame: &mut Frame) {
+    /// Render the shared header bar + tab strip on the top two rows and
+    /// return the body area left below them.
+    fn draw_chrome(&self, frame: &mut Frame, area: Rect) -> Rect {
         let vertical = Layout::vertical([
             Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Min(0),
-            Constraint::Length(3),
         ]);
-        let [title_area, list_area, footer_area] = vertical.areas(frame.area());
+        let [header_area, tabs_area, body_area] = vertical.areas(area);
 
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                format!(" aether · sessions — {} ", self.sessions.len()),
-                theme::title(),
-            ))),
-            title_area,
+        let header = chrome::render_header(
+            &chrome::HeaderData {
+                brand: "aether",
+                screen: match self.screen {
+                    Screen::Sessions => "sessions",
+                    Screen::Chat => "chat",
+                    Screen::Agent => "agent",
+                    Screen::Palette => "chat",
+                },
+                model: &self.model,
+                provider: &self.provider,
+                version: env!("CARGO_PKG_VERSION"),
+                session_count: self.sessions.len(),
+            },
+            area.width,
         );
+        frame.render_widget(Paragraph::new(header), header_area);
+
+        let selected = matches!(self.screen, Screen::Chat | Screen::Palette);
+        let tabs = chrome::render_tabs(
+            &[
+                ("chat", selected),
+                ("agent", self.screen == Screen::Agent),
+                ("sessions", self.screen == Screen::Sessions),
+            ],
+            area.width,
+        );
+        frame.render_widget(Paragraph::new(tabs), tabs_area);
+
+        body_area
+    }
+
+    fn draw_sessions(&mut self, frame: &mut Frame, body: Rect) {
+        let vertical = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]);
+        let [list_area, footer_area] = vertical.areas(body);
 
         let items: Vec<ListItem> = self
             .sessions
@@ -649,31 +782,19 @@ impl RatatuiTui {
                 totals.sessions, totals.turns, totals.input_tokens, totals.output_tokens
             ),
         };
-        let right = "j/k or wheel: move · Enter: open · d: delete · r: rename · ctrl+P: model · q: quit";
+        let right =
+            "j/k or wheel: move · Enter: open · d: delete · r: rename · ctrl+P: model · q: quit";
         self.render_footer(frame, footer_area, &left, right);
     }
 
-    fn draw_chat(&mut self, frame: &mut Frame) {
+    fn draw_chat(&mut self, frame: &mut Frame, body: Rect) {
         let vertical = Layout::vertical([
-            Constraint::Length(1),
             Constraint::Min(0),
+            Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(1),
         ]);
-        let [title_area, body_area, input_area, footer_area] = vertical.areas(frame.area());
-
-        let title = self
-            .active
-            .as_ref()
-            .map(|s| s.title().unwrap_or_else(|_| "untitled".into()))
-            .unwrap_or_else(|| "chat".into());
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                format!(" {title} "),
-                theme::title(),
-            ))),
-            title_area,
-        );
+        let [body_area, status_area, input_area, footer_area] = vertical.areas(body);
 
         // Visible window of rows (oldest at top, scroll up to reveal history).
         let viewport = body_area.height as usize;
@@ -686,7 +807,7 @@ impl RatatuiTui {
             .iter()
             .skip(start)
             .take(viewport)
-            .map(|r| self.row_to_line(r))
+            .flat_map(|r| self.render_message(r, body_area.width))
             .collect();
         if let Some(tail) = &self.pending {
             rows.push(Line::from(vec![
@@ -694,7 +815,7 @@ impl RatatuiTui {
                 Span::raw(tail.as_str()),
             ]));
         }
-        let body = Paragraph::new(rows)
+        let transcript = Paragraph::new(rows)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -702,7 +823,16 @@ impl RatatuiTui {
                     .title(" transcript "),
             )
             .wrap(Wrap { trim: false });
-        frame.render_widget(body, body_area);
+        frame.render_widget(transcript, body_area);
+
+        let status = match self.processing {
+            ProcessingStatus::Idle => Span::styled("ready", theme::muted()),
+            ProcessingStatus::Thinking => Span::styled("⏳ thinking…", theme::accent()),
+            ProcessingStatus::Streaming(n) => {
+                Span::styled(format!("● streaming · {n} chunks"), theme::accent())
+            }
+        };
+        frame.render_widget(Paragraph::new(Line::from(status)), status_area);
 
         let input_widget = Paragraph::new(if self.pending.is_some() {
             Line::from(Span::styled("streaming…", theme::muted()))
@@ -738,46 +868,107 @@ impl RatatuiTui {
         self.render_footer(frame, footer_area, &left, &right);
     }
 
-    fn row_to_line<'a>(&self, row: &'a ChatRow) -> Line<'a> {
+    fn render_message<'a>(&self, row: &'a ChatRow, width: u16) -> Vec<Line<'a>> {
         let prefix = match row.role.as_str() {
             "user" => Span::styled("you  ", theme::accent()),
+            "system" => Span::styled("sys  ", theme::muted()),
             _ => Span::styled("ai   ", theme::ai()),
         };
-        Line::from(vec![prefix, Span::raw(row.content.as_str())])
+        if row.role == "assistant" {
+            if let Some(card) = cards::extract_plan_card(&row.content) {
+                let total = card.lines.len();
+                let done = card
+                    .lines
+                    .iter()
+                    .filter(|l| l.trim_start().starts_with("- [x]"))
+                    .count();
+                let mut lines = cards::render_plan_card(&card, width);
+                let mut meter =
+                    cards::render_todos_pip_meter(done, total, width.saturating_sub(6).min(20));
+                meter.spans.insert(0, Span::raw("  "));
+                lines.push(meter);
+                lines.insert(0, Line::from(prefix));
+                return lines;
+            }
+        }
+        vec![Line::from(vec![prefix, Span::raw(row.content.as_str())])]
     }
 
     /// Two-part footer: totals on the left, keybindings on the right.
     fn render_footer(&self, frame: &mut Frame, area: Rect, left: &str, right: &str) {
-        let horizontal = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]);
+        let left_len = render::visible_length(left) as u16 + 2;
+        let horizontal = Layout::horizontal([Constraint::Length(left_len), Constraint::Min(0)]);
         let [left_area, right_area] = horizontal.areas(area);
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                left,
-                theme::muted(),
-            ))),
+            Paragraph::new(Line::from(Span::styled(left, theme::muted()))),
             left_area,
         );
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                right,
-                theme::muted(),
-            ))),
+            Paragraph::new(Line::from(Span::styled(right, theme::muted()))),
             right_area,
         );
     }
 
-    fn draw_palette(&mut self, frame: &mut Frame) {
-        let area = frame.area();
-        let w = area.width.min(40);
-        let h = (self.palette_models.len() as u16 + 2).min(area.height.saturating_sub(2));
-        let x = area.x + area.width.saturating_sub(w) / 2;
-        let y = area.y + area.height.saturating_sub(h) / 2;
+    fn draw_agent(&mut self, frame: &mut Frame, body: Rect) {
+        if let Some(rx) = &self.agent_rx {
+            while let Ok(phase) = rx.try_recv() {
+                self.agent_state.apply(phase);
+            }
+        }
+        let vertical = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]);
+        let [panel_area, footer_area] = vertical.areas(body);
+
+        let lines: Vec<Line> = self
+            .agent_state
+            .status_lines()
+            .into_iter()
+            .map(|line| {
+                if matches!(line.as_str(), "PLAN" | "BUILD" | "ROUTE") {
+                    Line::from(Span::styled(line, theme::title()))
+                } else if line.starts_with("DONE:") {
+                    Line::from(Span::styled(line, theme::accent()))
+                } else {
+                    Line::from(Span::raw(line))
+                }
+            })
+            .collect();
+        let panel = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border())
+                    .title(" agent loop "),
+            )
+            .wrap(Wrap { trim: false });
+        frame.render_widget(panel, panel_area);
+
+        let left = if self.agent_state.stopped {
+            "agent finished".to_string()
+        } else if self.agent_rx.is_some() {
+            "agent running — plan → build → route".to_string()
+        } else {
+            "press Enter to run the agent loop".to_string()
+        };
+        let right = "Enter: run · Tab: switch · Esc: back";
+        self.render_footer(frame, footer_area, &left, right);
+    }
+
+    fn draw_palette(&mut self, frame: &mut Frame, body: Rect) {
+        let w = body.width.min(40);
+        let h = (self.palette_models.len() as u16 + 2).min(body.height.saturating_sub(2));
+        let x = body.x + body.width.saturating_sub(w) / 2;
+        let y = body.y + body.height.saturating_sub(h) / 2;
         let palette_rect = Rect::new(x, y, w, h);
 
         let items: Vec<ListItem> = self
             .palette_models
             .iter()
-            .map(|m| ListItem::new(Line::from(Span::styled(m, Style::default().fg(Color::White)))))
+            .map(|m| {
+                ListItem::new(Line::from(Span::styled(
+                    m,
+                    Style::default().fg(Color::White),
+                )))
+            })
             .collect();
         let list = List::new(items)
             .block(
