@@ -334,6 +334,15 @@ a:focus-visible, button:focus-visible {
   max-height: 420px;
 }
 
+.terminal-gif {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1150 / 640;
+  background: #000;
+  object-fit: cover;
+}
+
 .t-dim { color: var(--text-tertiary); }
 .t-prompt { color: var(--text-primary); font-weight: 700; }
 .t-sys { color: var(--text-primary); font-weight: 700; }

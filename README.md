@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="site/logo.svg" width="96" height="96" alt="aether logo" />
+  <img src="site/assets/img/logo.svg" width="96" height="96" alt="aether logo" />
 </p>
 
 <h1 align="center">Aether</h1>
@@ -14,7 +14,7 @@
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
   <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-120%20passing-brightgreen" alt="120 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-152%20passing-brightgreen" alt="152 tests passing" /></a>
 </p>
 
 ---
@@ -25,7 +25,7 @@ static binary that talks to any OpenAI-compatible API. It started as a migration
 exercise and became a full agent: chat, sessions, sync, MCP, and a ratatui TUI.
 
 <p align="center">
-  <img src="site/demo.gif" width="800" alt="aether in action — help, providers, models, ask, sessions" />
+  <img src="site/assets/img/demo.gif" width="800" alt="aether TUI v2 — session list, chat transcript, live plan → build → route agent screen" />
 </p>
 
 ## Install
@@ -91,16 +91,21 @@ No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 
 ## Quick start
 
+No Rust toolchain needed — install the prebuilt binary, checksum-verified:
+
 ```sh
-# 1. Build the binary
-cargo build --release
+# 1. Install (downloads the prebuilt binary for your OS/arch, verifies SHA-256)
+curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash
 
 # 2. Ask your first question (the free zen provider works out of the box)
-./target/release/aether ask "explain this repo in one paragraph"
+aether ask "explain this repo in one paragraph"
 
-# 3. Or open the interactive chat
-./target/release/aether chat
+# 3. Or open the full TUI
+aether tui
 ```
+
+Prefer to build from source? See [Building from source](#building-from-source)
+(requires Rust 1.97+).
 
 > No API key required by default — **zen** is the built-in free provider.
 > Bring your own key anytime: `aether use anthropic/claude-sonnet-5`.
@@ -181,9 +186,19 @@ reply) otherwise — so the loop runs on any OpenAI-compatible endpoint.
 
 ### The TUI
 
-`aether tui` launches a ratatui interface: session list + chat on the left,
-Ctrl+P model palette, mouse-wheel scrolling, and a live token ledger so you
-always know what a session costs before you commit to it.
+`aether tui` launches a ratatui interface with a chrome header (brand, screen,
+model, provider, version) and a tab bar — **chat · agent · sessions**:
+
+- **Sessions** — pick a past session or start fresh, keyboard-first
+- **Chat** — transcript with role-colored messages, plan cards (```plan
+  fences become bordered cards with a todo progress meter), and a status line
+  (ready / thinking / streaming with token count)
+- **Agent** — three live panels (PLAN · BUILD · ROUTE) fed by the agent loop's
+  observer channel: iteration, tool-call, and verdict counters update in real
+  time while the three-model loop runs
+
+Mouse-wheel scrolling and a live token ledger round it out, so you always know
+what a session costs before you commit to it.
 
 ### MCP server
 
@@ -247,7 +262,7 @@ parse but print a deprecation notice:
 - [x] `session` — JSONL store, auto-title, recall search, usage ledger
 - [x] `sync` (legacy) — gist or folder backends with line-level merge
 - [x] `mcp` — MCP server over stdio + Streamable HTTP
-- [x] `tui` — ratatui terminal UI with Ctrl+P palette and token ledger
+- [x] `tui` — ratatui TUI v2: chrome header + tabs, live agent panels, plan cards, status line
 - [x] `benchmark/` — reproducible harness: **4.99 MB · ~112 ms · ~5 MB RSS**
 
 > Early development: APIs may shift until 1.0. Golden tests keep every port

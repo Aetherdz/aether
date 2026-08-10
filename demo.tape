@@ -6,23 +6,26 @@ Set Padding 20
 Set Margin 10
 Set PlaybackSpeed 1.2
 
-# Aether — one-line pitch
-Type "aether --help"
+# Aether TUI v2 — session list behind the chrome header + tab bar
+Type "AETHER_CONFIG_DIR=/tmp/aether-gif-demo ./target/release/aether tui"
 Enter
 Sleep 2s
 
-Type "aether providers"
+# Open the first session into the chat transcript
 Enter
 Sleep 2s
 
-Type "aether models zen"
-Enter
+# Type a question into the input box
+Type "summarize our agent loop work"
+Sleep 1.5s
+
+# Tab to the Agent screen (live plan -> build -> route panels)
+Tab
+Sleep 3s
+
+# Tab back to the session list
+Tab
 Sleep 2s
 
-Type "aether ask one-line haiku about the terminal"
-Enter
-Sleep 8s
-
-Type "aether sessions"
-Enter
-Sleep 2s
+# Quit
+Type "q"
