@@ -37,12 +37,39 @@ fn main() -> Result<()> {
     match cli.command {
         // The TUI builds its own tokio runtime, so it must run outside the
         // runtime created below (a second Runtime::new() would panic).
-        Command::Tui => cmd_tui(),
-        command => {
+        None | Some(Command::Tui) => cmd_tui(),
+        Some(Command::Help) => cmd_help(),
+        Some(command) => {
             let rt = tokio::runtime::Runtime::new().map_err(|e| Error::Config(e.to_string()))?;
             rt.block_on(dispatch(command))
         }
     }
+}
+
+fn cmd_help() -> Result<()> {
+    println!(
+        "{}\n",
+        <Cli as clap::CommandFactory>::command().render_long_help()
+    );
+    println!(
+        "commands:\n\
+         \x20 aether                    open the terminal UI (default)\n\
+         \x20 aether ask \"...\"          ask a one-shot question\n\
+         \x20 aether chat               interactive chat REPL\n\
+         \x20 aether agent \"task\"       run the 3-model plan -> build -> route loop\n\
+         \x20 aether agent undo [f]     list / restore write snapshots\n\
+         \x20 aether tui                open the terminal UI explicitly\n\n\
+         providers & sessions:\n\
+         \x20 aether provider list      list providers and key status\n\
+         \x20 aether provider models    list models (zen fetches live)\n\
+         \x20 aether provider use p/m   set the default provider/model\n\
+         \x20 aether session list       list sessions\n\
+         \x20 aether session show ID    show a full transcript\n\
+         \x20 aether session resume ID  continue a session in chat\n\
+         \x20 aether session search X   search past sessions\n\
+         \x20 aether sync status        show sync state (gist/folder)"
+    );
+    Ok(())
 }
 
 async fn dispatch(command: Command) -> Result<()> {
@@ -118,7 +145,9 @@ async fn dispatch(command: Command) -> Result<()> {
             deprecate("undo", "agent undo");
             cmd_undo(file.as_deref())
         }
-        Command::Tui => unreachable!("Tui is dispatched from main() before the runtime"),
+        Command::Tui | Command::Help => {
+            unreachable!("Tui and Help are dispatched from main() before the runtime")
+        }
     }
 }
 

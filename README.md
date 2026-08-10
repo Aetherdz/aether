@@ -14,7 +14,7 @@
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
   <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-152%20passing-brightgreen" alt="152 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-163%20passing-brightgreen" alt="163 tests passing" /></a>
 </p>
 
 ---
@@ -58,7 +58,7 @@ mismatch. No Node, no Python, no package-manager hoops — one native binary.
 | **Runtime** | One native Rust binary | Node + hundreds of MB of deps |
 | **Size** | **4.99 MB** — one stripped binary | hundreds of MB installed |
 | **Startup** | **~112 ms** cold start | 1 s+ cold start per run |
-| **Default provider** | Free `zen` — works with zero API keys | Usually paid keys required |
+| **Interface** | ratatui TUI + six CLI commands | CLI or IDE panel |
 | **Session format** | Plain JSONL — grep it, script it, own it | Often bespoke databases |
 | **Sync** | Gist or folder, line-level merge | Varies, rarely portable |
 | **MCP** | stdio + Streamable HTTP server built in | Requires separate config |
@@ -69,20 +69,19 @@ No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 
 | | Aether | Aider | Continue | Claude Code | opencode | jcode |
 |---|---|---|---|---|---|---|
+| **Interface** | ratatui TUI + six CLI commands | terminal REPL (git-native) | IDE extension (VS Code / JetBrains) | terminal REPL (Node) | terminal TUI (Bun) | terminal TUI (Rust) |
 | **Runtime** | Native Rust binary | Python | Node/VS Code | Node | TypeScript/Bun | Rust binary |
-| **Install** | `curl \| bash` (prebuilt) | `pip install` | VS Code ext | npm package | npm/curl | curl (prebuilt) |
 | **Binary size** | **4.99 MB** (measured) | — (Python) | — (Node) | — (Node) | 35–55 MB* | — (Rust) |
 | **Startup** | **~112 ms** `--version` (measured) | — | — | ~3.4 s† | ~1 s† | ~14 ms† (to first frame) |
-| **Free default provider** | ✅ built-in `zen` | ❌ needs key (Ollama optional) | ⚠️ local models only | ❌ Anthropic key | ⚠️ needs key/local | ⚠️ needs key/local |
-| **Agent loop w/ tools** | ✅ plan→build→route (3 models) | ✅ | ✅ | ✅ | ✅ | ⚠️ partial |
-| **Sandboxed tools** | ✅ path-sandboxed, 30 s timeout | ⚠️ per-command confirm | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
-| **Diff preview before write** | ✅ built in (y/N gate) | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Undo / checkpoint** | ✅ `.aether-undo` + `aether undo` | ❌ | ❌ | ⚠️ partial | ❌ | ❌ |
-| **Sessions as plain files** | ✅ JSONL | ⚠️ sqlite | ❌ | ❌ | ⚠️ sqlite | ✅ JSONL |
-| **Cross-device sync** | ✅ gist/folder line-merge | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **MCP server** | ✅ built in (stdio + HTTP) | ❌ (client only) | ✅ client | ✅ client | ✅ | ❌ |
-| **Telemetry** | ❌ none, verifiable | ⚠️ opt-in | ⚠️ | ⚠️ | ⚠️ | ❌ |
-| **Local models (Ollama/LM Studio)** | ✅ first-class providers | ✅ | ✅ | ❌ | ✅ | ⚠️ |
+| **Agent loop w/ tools** | Yes — plan→build→route (3 models) | Yes | Yes | Yes | Yes | Partial |
+| **Sandboxed tools** | Yes — path-sandboxed, 30 s timeout | Partial — per-command confirm | Partial | Partial | Partial | Partial |
+| **Diff preview before write** | Yes — built in (y/N gate) | Yes | Yes | Yes | Yes | No |
+| **Undo / checkpoint** | Yes — `.aether-undo` + `aether undo` | No | No | Partial | No | No |
+| **Sessions as plain files** | Yes — JSONL | Partial — sqlite | No | No | Partial — sqlite | Yes — JSONL |
+| **Cross-device sync** | Yes — gist/folder line-merge | No | No | No | No | No |
+| **MCP server** | Yes — built in (stdio + HTTP) | No (client only) | Yes — client | Yes — client | Yes | No |
+| **Telemetry** | No — none, verifiable | Partial — opt-in | Partial | Partial | Partial | No |
+| **Local models (Ollama/LM Studio)** | Yes — first-class providers | Yes | Yes | No | Yes | Partial |
 
 > Aether figures are **measured in this repo** by [benchmark/run.sh](benchmark/run.sh)
 > (5-run median, 2026-08-09) — same binary, same machine, reproducible.

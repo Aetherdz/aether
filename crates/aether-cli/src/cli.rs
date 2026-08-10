@@ -9,15 +9,22 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "aether",
     version,
-    about = "A cross-platform terminal AI coding agent. Building tools that break assumptions."
+    about = "A cross-platform terminal AI coding agent. Building tools that break assumptions.",
+    disable_help_subcommand = true,
+    subcommand_required = false
 )]
 pub struct Cli {
+    /// Open the terminal UI when no command is given (like `aether tui`)
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Open the full terminal UI (default when you run `aether` with no command)
+    Tui,
+    /// Show a grouped, friendly command reference
+    Help,
     /// Ask a one-shot question and stream the answer
     Ask {
         /// The question to ask
@@ -69,8 +76,6 @@ pub enum Command {
         #[arg(long)]
         yes: bool,
     },
-    /// Launch the interactive ratatui terminal UI
-    Tui,
     /// Manage providers: list, models, use (set default)
     Provider {
         #[command(subcommand)]
@@ -244,89 +249,108 @@ mod tests {
     use super::*;
     use clap::Parser;
 
-    fn parse(args: &[&str]) -> Command {
+    fn parse(args: &[&str]) -> Option<Command> {
         Cli::try_parse_from(std::iter::once("aether").chain(args.iter().copied()))
             .expect("args should parse")
             .command
     }
 
     #[test]
+    fn no_args_is_none_so_main_opens_tui() {
+        assert!(parse(&[]).is_none());
+        assert!(matches!(parse(&["tui"]), Some(Command::Tui)));
+        assert!(matches!(parse(&["help"]), Some(Command::Help)));
+    }
+
+    #[test]
     fn new_surface_parses() {
-        assert!(matches!(parse(&["ask", "hi"]), Command::Ask { .. }));
-        assert!(matches!(parse(&["chat"]), Command::Chat { .. }));
-        assert!(matches!(parse(&["tui"]), Command::Tui));
+        assert!(matches!(parse(&["ask", "hi"]), Some(Command::Ask { .. })));
+        assert!(matches!(parse(&["chat"]), Some(Command::Chat { .. })));
+        assert!(matches!(parse(&["tui"]), Some(Command::Tui)));
         assert!(matches!(
             parse(&["provider", "list"]),
-            Command::Provider { .. }
+            Some(Command::Provider { .. })
         ));
         assert!(matches!(
             parse(&["session", "list"]),
-            Command::Session { .. }
+            Some(Command::Session { .. })
         ));
     }
 
     #[test]
     fn agent_task_and_undo_both_parse() {
         match parse(&["agent", "fix the bug"]) {
-            Command::Agent {
+            Some(Command::Agent {
                 task: Some(t),
                 action: None,
                 ..
-            } => assert_eq!(t, "fix the bug"),
+            }) => assert_eq!(t, "fix the bug"),
             other => panic!("expected Agent with task, got {other:?}"),
         }
         match parse(&["agent", "undo", "src/main.rs"]) {
-            Command::Agent {
+            Some(Command::Agent {
                 task: None,
                 action: Some(AgentAction::Undo { file }),
                 ..
-            } => assert_eq!(file.as_deref(), Some("src/main.rs")),
+            }) => assert_eq!(file.as_deref(), Some("src/main.rs")),
             other => panic!("expected Agent undo, got {other:?}"),
         }
         // Bare `agent` with no task and no subcommand parses (handled in main).
-        assert!(matches!(parse(&["agent"]), Command::Agent { .. }));
+        assert!(matches!(parse(&["agent"]), Some(Command::Agent { .. })));
     }
 
     #[test]
     fn agent_resume_parses_without_task() {
         match parse(&["agent", "--resume"]) {
-            Command::Agent {
+            Some(Command::Agent {
                 task: None,
                 action: None,
                 resume: true,
                 ..
-            } => {}
+            }) => {}
             other => panic!("expected Agent --resume without task, got {other:?}"),
         }
         match parse(&["agent", "fix the bug", "--resume"]) {
-            Command::Agent {
+            Some(Command::Agent {
                 task: Some(t),
                 resume: true,
                 ..
-            } => assert_eq!(t, "fix the bug"),
+            }) => assert_eq!(t, "fix the bug"),
             other => panic!("expected Agent with task + --resume, got {other:?}"),
         }
     }
 
     #[test]
     fn deprecated_aliases_still_resolve() {
-        assert!(matches!(parse(&["use", "zen"]), Command::Use { .. }));
-        assert!(matches!(parse(&["models", "zen"]), Command::Models { .. }));
-        assert!(matches!(parse(&["providers"]), Command::Providers));
-        assert!(matches!(parse(&["recall", "auth"]), Command::Recall { .. }));
-        assert!(matches!(parse(&["undo", "file.rs"]), Command::Undo { .. }));
-        assert!(matches!(parse(&["sync", "status"]), Command::Sync { .. }));
+        assert!(matches!(parse(&["use", "zen"]), Some(Command::Use { .. })));
+        assert!(matches!(
+            parse(&["models", "zen"]),
+            Some(Command::Models { .. })
+        ));
+        assert!(matches!(parse(&["providers"]), Some(Command::Providers)));
+        assert!(matches!(
+            parse(&["recall", "auth"]),
+            Some(Command::Recall { .. })
+        ));
+        assert!(matches!(
+            parse(&["undo", "file.rs"]),
+            Some(Command::Undo { .. })
+        ));
+        assert!(matches!(
+            parse(&["sync", "status"]),
+            Some(Command::Sync { .. })
+        ));
     }
 
     #[test]
     fn deprecated_sessions_actions_map_one_to_one() {
         assert!(matches!(
             parse(&["sessions", "list"]),
-            Command::Sessions { .. }
+            Some(Command::Sessions { .. })
         ));
         assert!(matches!(
             parse(&["sessions", "show", "abc"]),
-            Command::Sessions { .. }
+            Some(Command::Sessions { .. })
         ));
     }
 }

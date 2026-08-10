@@ -86,6 +86,8 @@ mod theme {
     pub const BORDER: Color = Color::Rgb(0x33, 0x41, 0x55);
     pub const MUTED: Color = Color::Rgb(0x64, 0x74, 0x8b);
     pub const SELECT_BG: Color = Color::Rgb(0x1e, 0x29, 0x3b);
+    /// Background fill behind user messages (opencode-style "You" block).
+    pub const USER_BG: Color = Color::Rgb(0x16, 0x22, 0x30);
 
     pub fn title() -> Style {
         Style::default().fg(TITLE).add_modifier(Modifier::BOLD)
@@ -115,6 +117,41 @@ enum Screen {
     /// Live plan -> build -> route loop visualization.
     Agent,
     Palette,
+    /// Slash-command picker (opened by typing `/` in the chat input).
+    Commands,
+}
+
+/// A slash command entry shown by the `/` picker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SlashCmd {
+    Model,
+    Agent,
+    Sessions,
+    Clear,
+    Help,
+    Exit,
+}
+
+impl SlashCmd {
+    const ALL: [SlashCmd; 6] = [
+        SlashCmd::Model,
+        SlashCmd::Agent,
+        SlashCmd::Sessions,
+        SlashCmd::Clear,
+        SlashCmd::Help,
+        SlashCmd::Exit,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            SlashCmd::Model => "/model    switch the active model",
+            SlashCmd::Agent => "/agent    open the live agent loop",
+            SlashCmd::Sessions => "/sessions go back to the session list",
+            SlashCmd::Clear => "/clear    clear the transcript",
+            SlashCmd::Help => "/help     show this reference",
+            SlashCmd::Exit => "/exit     quit aether",
+        }
+    }
 }
 
 /// A renderable chat line with its role for colouring.
@@ -135,6 +172,24 @@ enum KeyAction {
     SendTurn { question: String, model: String },
 }
 
+/// One event pushed from the background streaming task to the UI thread.
+#[derive(Debug)]
+enum StreamEvent {
+    Chunk(String),
+    Usage(aether_provider::Usage),
+    Done,
+    Error(String),
+}
+
+/// An in-flight reply being streamed in a background task. The UI drains
+/// [`ChatStream::rx`] on every draw tick, so typing, scrolling and the
+/// spinner stay live while the model answers — nothing blocks the loop.
+struct ChatStream {
+    rx: std::sync::mpsc::Receiver<StreamEvent>,
+    buffer: String,
+    usage: Option<aether_provider::Usage>,
+}
+
 /// Live streaming state shown on the status line above the chat input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum ProcessingStatus {
@@ -143,6 +198,9 @@ enum ProcessingStatus {
     Thinking,
     Streaming(u64),
 }
+
+/// Braille spinner frames; index with `frame % SPINNER.len()`.
+const SPINNER: [char; 8] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
 
 /// The full ratatui application state.
 pub struct RatatuiTui {
@@ -156,9 +214,11 @@ pub struct RatatuiTui {
     /// Transcript rows for the active session (includes streamed tail).
     chat: Vec<ChatRow>,
     chat_scroll: usize,
-    /// Streaming buffer while a response is arriving.
-    pending: Option<String>,
+    /// In-flight reply streaming from the background task (None when idle).
+    stream: Option<ChatStream>,
     processing: ProcessingStatus,
+    /// Animation frame counter for the status spinner (advanced each draw).
+    frame: u32,
     /// Live token counters for the active session.
     input_tokens: u64,
     output_tokens: u64,
@@ -169,6 +229,8 @@ pub struct RatatuiTui {
     /// Palette state: available models + the highlighted one.
     palette_models: Vec<String>,
     palette_index: usize,
+    /// Highlighted row of the slash-command picker.
+    commands_index: usize,
     /// Ledger totals footer.
     totals: aether_session::Totals,
     /// The most recent background error, shown in the footer.
@@ -191,14 +253,16 @@ impl Default for RatatuiTui {
             active: None,
             chat: Vec::new(),
             chat_scroll: 0,
-            pending: None,
+            stream: None,
             processing: ProcessingStatus::Idle,
+            frame: 0,
             input_tokens: 0,
             output_tokens: 0,
             input: String::new(),
             model: String::new(),
             palette_models: Vec::new(),
             palette_index: 0,
+            commands_index: 0,
             totals: aether_session::Totals::default(),
             last_error: None,
             agent_state: agent_screen::AgentScreenState::default(),
@@ -222,8 +286,10 @@ fn clamp_scroll(scroll: usize, total: usize, viewport: usize) -> usize {
 impl RatatuiTui {
     /// Build the UI and load the session list + ledger totals.
     pub fn new() -> Result<Self, TuiError> {
-        let mut app = Self::default();
-        app.model = default_model();
+        let mut app = Self {
+            model: default_model(),
+            ..Self::default()
+        };
         let config = load_config().unwrap_or_default();
         app.provider = resolve_default(&config, None, None).provider.name.clone();
         app.refresh_sessions()?;
@@ -330,13 +396,23 @@ impl RatatuiTui {
             .map_err(|e| TuiError::Provider(e.to_string()))
     }
 
-    /// Send one user turn; stream the reply into `self.chat` and persist.
-    async fn send_turn(&mut self, question: String, model: &str) -> Result<(), TuiError> {
-        let client = Self::client()?;
-        // Context window: the last 40 rows bounds RAM + token spend on long chats.
+    /// Queue one user turn: show the message immediately, spawn a background
+    /// streaming task, and return — the draw loop keeps running.
+    fn start_turn(&mut self, question: String, model: &str) -> Result<(), TuiError> {
+        self.chat.push(ChatRow {
+            role: "user".to_string(),
+            content: question.clone(),
+        });
+        self.chat_scroll = self.chat.len().saturating_sub(1);
+        if let Some(session) = &self.active {
+            session
+                .append("user", &question)
+                .map_err(|e| TuiError::Session(e.to_string()))?;
+        }
+
         const HISTORY_WINDOW: usize = 40;
         let start = self.chat.len().saturating_sub(HISTORY_WINDOW);
-        let mut history: Vec<ChatMessage> = self.chat[start..]
+        let mut history: Vec<ChatMessage> = self.chat[start..self.chat.len() - 1]
             .iter()
             .map(|r| ChatMessage {
                 role: r.role.clone(),
@@ -346,10 +422,18 @@ impl RatatuiTui {
             .collect();
         history.push(ChatMessage {
             role: "user".to_string(),
-            content: question.clone(),
+            content: question,
             ..ChatMessage::default()
         });
 
+        let client = Self::client()?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.stream = Some(ChatStream {
+            rx,
+            buffer: String::new(),
+            usage: None,
+        });
+        self.processing = ProcessingStatus::Thinking;
         let request = ChatRequest {
             model: model.to_string(),
             messages: history,
@@ -357,75 +441,101 @@ impl RatatuiTui {
             stream: true,
             tools: None,
         };
-
-        self.processing = ProcessingStatus::Thinking;
-        let mut usage = None;
-        let stream = match client.stream_chat(&request).await {
-            Ok(stream) => stream,
-            Err(e) => {
-                self.processing = ProcessingStatus::Idle;
-                return Err(TuiError::Provider(e.to_string()));
-            }
-        };
-        futures::pin_mut!(stream);
-        // Stream straight into the pending buffer: one allocation, no
-        // per-chunk clones (a long reply used to be copied on every chunk).
-        self.pending = Some(String::new());
-        let mut tokens = 0u64;
-        {
-            let buffer = self.pending.as_mut().expect("pending just set");
-            while let Some(chunk) = stream.next().await {
-                let chunk = match chunk {
-                    Ok(chunk) => chunk,
-                    Err(e) => {
-                        self.processing = ProcessingStatus::Idle;
-                        return Err(TuiError::Provider(e.to_string()));
+        tokio::spawn(async move {
+            match client.stream_chat(&request).await {
+                Ok(stream) => {
+                    futures::pin_mut!(stream);
+                    while let Some(chunk) = stream.next().await {
+                        match chunk {
+                            Ok(chunk) => {
+                                if let Some(text) = &chunk.content {
+                                    let _ = tx.send(StreamEvent::Chunk(text.clone()));
+                                }
+                                if let Some(u) = chunk.usage {
+                                    let _ = tx.send(StreamEvent::Usage(u));
+                                }
+                            }
+                            Err(e) => {
+                                let _ = tx.send(StreamEvent::Error(e.to_string()));
+                                return;
+                            }
+                        }
                     }
-                };
-                tokens += 1;
-                self.processing = ProcessingStatus::Streaming(tokens);
-                if let Some(text) = &chunk.content {
-                    buffer.push_str(text);
+                    let _ = tx.send(StreamEvent::Done);
                 }
-                if chunk.usage.is_some() {
-                    usage = chunk.usage;
+                Err(e) => {
+                    let _ = tx.send(StreamEvent::Error(e.to_string()));
+                }
+            }
+        });
+        Ok(())
+    }
+
+    /// Drain stream events since the last draw tick. Called on every frame so
+    /// streaming text, the spinner, and token counters update in real time.
+    fn drain_stream(&mut self) {
+        let events: Vec<StreamEvent> = match &self.stream {
+            Some(s) => s.rx.try_iter().collect(),
+            None => return,
+        };
+        if events.is_empty() {
+            return;
+        }
+        for ev in events {
+            match ev {
+                StreamEvent::Chunk(text) => {
+                    if let Some(s) = &mut self.stream {
+                        s.buffer.push_str(&text);
+                    }
+                    let n = self
+                        .stream
+                        .as_ref()
+                        .map_or(0, |s| s.buffer.chars().count() as u64 / 4);
+                    self.processing = ProcessingStatus::Streaming(n);
+                }
+                StreamEvent::Usage(u) => {
+                    if let Some(s) = &mut self.stream {
+                        s.usage = Some(u);
+                    }
+                }
+                StreamEvent::Done => {
+                    let (reply, usage) = match self.stream.take() {
+                        Some(s) => (s.buffer, s.usage),
+                        None => (String::new(), None),
+                    };
+                    self.finish_reply(reply, usage);
+                }
+                StreamEvent::Error(e) => {
+                    self.stream = None;
+                    self.processing = ProcessingStatus::Idle;
+                    self.last_error = Some(TuiError::Provider(e));
                 }
             }
         }
-        self.processing = ProcessingStatus::Idle;
-        let reply = self.pending.take().unwrap_or_default();
+    }
 
+    /// Persist a completed reply to the session and append it to the chat.
+    fn finish_reply(&mut self, reply: String, usage: Option<aether_provider::Usage>) {
         if let Some(session) = &self.active {
-            session
-                .append("user", &question)
-                .map_err(|e| TuiError::Session(e.to_string()))?;
-            session
-                .append("assistant", &reply)
-                .map_err(|e| TuiError::Session(e.to_string()))?;
-            if let Some(u) = usage {
+            let _ = session.append("assistant", &reply);
+            if let Some(u) = &usage {
                 let input = u.prompt_tokens.unwrap_or(0);
                 let output = u.completion_tokens.unwrap_or(0);
-                session
-                    .append_usage(aether_session::SessionMeta {
-                        turns: 1,
-                        input_tokens: input,
-                        output_tokens: output,
-                    })
-                    .map_err(|e| TuiError::Session(e.to_string()))?;
+                let _ = session.append_usage(aether_session::SessionMeta {
+                    turns: 1,
+                    input_tokens: input,
+                    output_tokens: output,
+                });
                 self.input_tokens += input;
                 self.output_tokens += output;
             }
         }
         self.chat.push(ChatRow {
-            role: "user".to_string(),
-            content: question,
-        });
-        self.chat.push(ChatRow {
             role: "assistant".to_string(),
             content: reply,
         });
         self.chat_scroll = self.chat.len().saturating_sub(1);
-        Ok(())
+        self.processing = ProcessingStatus::Idle;
     }
 
     /// Drive one event and return `true` to quit.
@@ -435,7 +545,7 @@ impl RatatuiTui {
                 KeyAction::Continue => Ok(false),
                 KeyAction::Quit => Ok(true),
                 KeyAction::SendTurn { question, model } => {
-                    self.send_turn(question, &model).await?;
+                    self.start_turn(question, &model)?;
                     Ok(false)
                 }
             },
@@ -471,6 +581,7 @@ impl RatatuiTui {
             Screen::Chat => self.on_key_chat(key),
             Screen::Agent => self.on_key_agent(key),
             Screen::Palette => self.on_key_palette(key),
+            Screen::Commands => self.on_key_commands(key),
         }
     }
 
@@ -523,9 +634,13 @@ impl RatatuiTui {
                 let _ = self.refresh_sessions();
                 KeyAction::Continue
             }
-            KeyCode::Char('q') if self.pending.is_none() && self.input.is_empty() => {
+            KeyCode::Char('q') if self.stream.is_none() && self.input.is_empty() => {
                 self.screen = Screen::Sessions;
                 let _ = self.refresh_sessions();
+                KeyAction::Continue
+            }
+            KeyCode::Char('/') if self.stream.is_none() && self.input.is_empty() => {
+                self.screen = Screen::Commands;
                 KeyAction::Continue
             }
             KeyCode::Char('j') | KeyCode::Down => {
@@ -536,19 +651,61 @@ impl RatatuiTui {
                 self.chat_scroll = self.chat_scroll.saturating_sub(1);
                 KeyAction::Continue
             }
-            KeyCode::Enter if self.pending.is_none() && !self.input.trim().is_empty() => {
+            KeyCode::Enter if self.stream.is_none() && !self.input.trim().is_empty() => {
                 let question = std::mem::take(&mut self.input);
                 let model = self.model.clone();
                 KeyAction::SendTurn { question, model }
             }
-            KeyCode::Backspace => {
-                self.input.pop();
+            KeyCode::Backspace | KeyCode::Char('\u{7f}') | KeyCode::Char('\u{08}') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    delete_word(&mut self.input);
+                } else {
+                    self.input.pop();
+                }
+                KeyAction::Continue
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                delete_word(&mut self.input);
                 KeyAction::Continue
             }
             KeyCode::Char(c)
-                if self.pending.is_none() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                if self.stream.is_none() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 self.input.push(c);
+                KeyAction::Continue
+            }
+            _ => KeyAction::Continue,
+        }
+    }
+
+    fn on_key_commands(&mut self, key: KeyEvent) -> KeyAction {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.screen = Screen::Chat;
+                KeyAction::Continue
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.commands_index = (self.commands_index + 1) % SlashCmd::ALL.len();
+                KeyAction::Continue
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.commands_index = self.commands_index.saturating_sub(1);
+                KeyAction::Continue
+            }
+            KeyCode::Enter => {
+                let cmd = SlashCmd::ALL[self.commands_index];
+                self.screen = Screen::Chat;
+                match cmd {
+                    SlashCmd::Model => self.open_palette(),
+                    SlashCmd::Agent => self.screen = Screen::Agent,
+                    SlashCmd::Sessions => {
+                        self.screen = Screen::Sessions;
+                        let _ = self.refresh_sessions();
+                    }
+                    SlashCmd::Clear => self.chat.clear(),
+                    SlashCmd::Help => self.show_help(),
+                    SlashCmd::Exit => return KeyAction::Quit,
+                }
                 KeyAction::Continue
             }
             _ => KeyAction::Continue,
@@ -691,6 +848,7 @@ impl RatatuiTui {
             Screen::Chat => self.draw_chat(frame, body),
             Screen::Agent => self.draw_agent(frame, body),
             Screen::Palette => self.draw_palette(frame, body),
+            Screen::Commands => self.draw_commands(frame, body),
         }
     }
 
@@ -712,6 +870,7 @@ impl RatatuiTui {
                     Screen::Chat => "chat",
                     Screen::Agent => "agent",
                     Screen::Palette => "chat",
+                    Screen::Commands => "commands",
                 },
                 model: &self.model,
                 provider: &self.provider,
@@ -793,12 +952,14 @@ impl RatatuiTui {
             Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(1),
+            Constraint::Length(1),
         ]);
-        let [body_area, status_area, input_area, footer_area] = vertical.areas(body);
+        let [body_area, status_area, input_area, usage_area, footer_area] = vertical.areas(body);
 
         // Visible window of rows (oldest at top, scroll up to reveal history).
         let viewport = body_area.height as usize;
-        let total = self.chat.len() + usize::from(self.pending.is_some());
+        let tail_active = self.stream.is_some();
+        let total = self.chat.len() + usize::from(tail_active);
         self.chat_scroll = clamp_scroll(self.chat_scroll, total, viewport);
         let end = total.saturating_sub(self.chat_scroll);
         let start = end.saturating_sub(viewport);
@@ -809,10 +970,13 @@ impl RatatuiTui {
             .take(viewport)
             .flat_map(|r| self.render_message(r, body_area.width))
             .collect();
-        if let Some(tail) = &self.pending {
+        if let Some(stream) = &self.stream {
+            let tail = stream.buffer.as_str();
+            let spinner = SPINNER[(self.frame as usize) % SPINNER.len()];
             rows.push(Line::from(vec![
                 Span::styled("ai  ", theme::ai()),
-                Span::raw(tail.as_str()),
+                Span::styled(format!("{spinner} "), theme::accent()),
+                Span::raw(tail),
             ]));
         }
         let transcript = Paragraph::new(rows)
@@ -834,7 +998,7 @@ impl RatatuiTui {
         };
         frame.render_widget(Paragraph::new(Line::from(status)), status_area);
 
-        let input_widget = Paragraph::new(if self.pending.is_some() {
+        let input_widget = Paragraph::new(if self.stream.is_some() {
             Line::from(Span::styled("streaming…", theme::muted()))
         } else {
             Line::from(vec![
@@ -866,32 +1030,77 @@ impl RatatuiTui {
         }
         right.push_str("Enter: send · j/k or wheel: scroll · ctrl+P: model · Esc: back · q: quit");
         self.render_footer(frame, footer_area, &left, &right);
+        self.draw_usage(frame, usage_area);
+    }
+
+    fn draw_usage(&mut self, frame: &mut Frame, area: Rect) {
+        let total = self.input_tokens + self.output_tokens;
+        let line = format!(
+            "session tokens: {} in · {} out · {} total    model: {}",
+            self.input_tokens, self.output_tokens, total, self.model
+        );
+        let usage_bar = Paragraph::new(Line::from(Span::styled(line, theme::muted()))).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(theme::border()),
+        );
+        frame.render_widget(usage_bar, area);
     }
 
     fn render_message<'a>(&self, row: &'a ChatRow, width: u16) -> Vec<Line<'a>> {
+        if row.role == "user" {
+            return self.render_user_block(&row.content, width);
+        }
         let prefix = match row.role.as_str() {
-            "user" => Span::styled("you  ", theme::accent()),
             "system" => Span::styled("sys  ", theme::muted()),
             _ => Span::styled("ai   ", theme::ai()),
         };
-        if row.role == "assistant" {
-            if let Some(card) = cards::extract_plan_card(&row.content) {
-                let total = card.lines.len();
-                let done = card
-                    .lines
-                    .iter()
-                    .filter(|l| l.trim_start().starts_with("- [x]"))
-                    .count();
-                let mut lines = cards::render_plan_card(&card, width);
-                let mut meter =
-                    cards::render_todos_pip_meter(done, total, width.saturating_sub(6).min(20));
-                meter.spans.insert(0, Span::raw("  "));
-                lines.push(meter);
-                lines.insert(0, Line::from(prefix));
-                return lines;
-            }
+        if let (true, Some(card)) = (
+            row.role == "assistant",
+            cards::extract_plan_card(&row.content),
+        ) {
+            let total = card.lines.len();
+            let done = card
+                .lines
+                .iter()
+                .filter(|l| l.trim_start().starts_with("- [x]"))
+                .count();
+            let mut lines = cards::render_plan_card(&card, width);
+            let mut meter =
+                cards::render_todos_pip_meter(done, total, width.saturating_sub(6).min(20));
+            meter.spans.insert(0, Span::raw("  "));
+            lines.push(meter);
+            lines.insert(0, Line::from(prefix));
+            return lines;
         }
         vec![Line::from(vec![prefix, Span::raw(row.content.as_str())])]
+    }
+
+    /// opencode-style user block: green "you" label + white text on a filled
+    /// background, padded to the full transcript width.
+    fn render_user_block<'a>(&self, content: &'a str, width: u16) -> Vec<Line<'a>> {
+        let inner = width.saturating_sub(2) as usize;
+        let label = "you  ";
+        let text_w = inner.saturating_sub(label.chars().count() + 1).max(10);
+        let body_style = Style::default().bg(theme::USER_BG);
+        let label_style = theme::accent().bg(theme::USER_BG);
+        let mut lines: Vec<Line> = Vec::new();
+        for (i, para) in render::wrap(content, text_w).into_iter().enumerate() {
+            let lead = if i == 0 { label } else { "     " };
+            let pad = inner.saturating_sub(lead.chars().count() + para.chars().count());
+            let mut spans = vec![
+                Span::styled(lead, label_style),
+                Span::styled(para, body_style.fg(Color::White)),
+            ];
+            if pad > 0 {
+                spans.push(Span::styled(" ".repeat(pad), body_style));
+            }
+            lines.push(Line::from(spans));
+        }
+        if lines.is_empty() {
+            lines.push(Line::from(Span::styled(label, label_style)));
+        }
+        lines
     }
 
     /// Two-part footer: totals on the left, keybindings on the right.
@@ -983,6 +1192,58 @@ impl RatatuiTui {
         state.select(Some(self.palette_index));
         frame.render_widget(list, palette_rect);
     }
+
+    fn draw_commands(&mut self, frame: &mut Frame, body: Rect) {
+        let w = body.width.min(46);
+        let h = (SlashCmd::ALL.len() as u16 + 2).min(body.height.saturating_sub(2));
+        let x = body.x + body.width.saturating_sub(w) / 2;
+        let y = body.y + body.height.saturating_sub(h) / 2;
+        let cmd_rect = Rect::new(x, y, w, h);
+
+        let items: Vec<ListItem> = SlashCmd::ALL
+            .iter()
+            .map(|c| {
+                ListItem::new(Line::from(Span::styled(
+                    c.label(),
+                    Style::default().fg(Color::White),
+                )))
+            })
+            .collect();
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border())
+                    .title(" / commands "),
+            )
+            .highlight_style(theme::highlight())
+            .highlight_symbol("▸ ");
+        let mut state = ListState::default();
+        state.select(Some(
+            self.commands_index
+                .min(SlashCmd::ALL.len().saturating_sub(1)),
+        ));
+        frame.render_widget(list, cmd_rect);
+    }
+
+    fn show_help(&mut self) {
+        let help = [
+            "aether — plan · build · route",
+            "",
+            "  chat        Enter send · j/k scroll · ctrl+W delete word",
+            "              ctrl+P model palette · / command menu",
+            "  agent       Enter run the plan → build → route loop",
+            "  sessions    j/k select · Enter open · d delete · r rename",
+            "  commands    / or q to close · Enter run · j/k select",
+            "  quit        q on sessions screen",
+        ]
+        .join("\n");
+        self.chat.push(ChatRow {
+            role: "system".to_string(),
+            content: help,
+        });
+        self.chat_scroll = self.chat.len().saturating_sub(1);
+    }
 }
 
 impl Tui for RatatuiTui {
@@ -1004,6 +1265,7 @@ impl Tui for RatatuiTui {
 impl RatatuiTui {
     async fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<(), TuiError> {
         loop {
+            self.drain_stream();
             terminal
                 .draw(|frame| self.draw(frame))
                 .map_err(|e| TuiError::Render(e.to_string()))?;
@@ -1018,6 +1280,17 @@ impl RatatuiTui {
                 }
             }
         }
+    }
+}
+
+/// Delete the whitespace-delimited word left of the cursor (ctrl+W).
+fn delete_word(input: &mut String) {
+    let trimmed_end = input.trim_end().len();
+    input.truncate(trimmed_end);
+    if let Some(pos) = input.rfind(char::is_whitespace) {
+        input.truncate(pos + 1);
+    } else {
+        input.clear();
     }
 }
 
@@ -1246,5 +1519,165 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         });
         assert_eq!(app.list_scroll, 0);
+    }
+
+    #[test]
+    fn delete_word_removes_whitespace_delimited_word() {
+        let mut input = "hello world".to_string();
+        delete_word(&mut input);
+        assert_eq!(input, "hello ");
+        let mut input = "hello".to_string();
+        delete_word(&mut input);
+        assert_eq!(input, "");
+        let mut input = "a b c".to_string();
+        delete_word(&mut input);
+        assert_eq!(input, "a b ");
+        let mut input = "  spaced  ".to_string();
+        delete_word(&mut input);
+        assert_eq!(input, "  ");
+    }
+
+    #[test]
+    fn backspace_and_ctrl_w_edit_chat_input() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input: "delete me".into(),
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
+        assert_eq!(app.input, "delete ");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.input, "delete");
+    }
+
+    #[test]
+    fn slash_opens_commands_screen_when_input_empty() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input: String::new(),
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Commands);
+    }
+
+    #[test]
+    fn slash_does_not_open_when_input_nonempty() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input: "/not-a-command".into(),
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Chat);
+    }
+
+    #[test]
+    fn commands_screen_clear_empties_chat() {
+        let mut app = RatatuiTui {
+            screen: Screen::Commands,
+            chat: vec![ChatRow {
+                role: "user".into(),
+                content: "drop me".into(),
+            }],
+            ..Default::default()
+        };
+        app.commands_index = SlashCmd::ALL
+            .iter()
+            .position(|c| *c == SlashCmd::Clear)
+            .unwrap();
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Chat);
+        assert!(app.chat.is_empty());
+    }
+
+    #[test]
+    fn commands_screen_help_returns_to_chat() {
+        let mut app = RatatuiTui {
+            screen: Screen::Commands,
+            ..Default::default()
+        };
+        app.commands_index = SlashCmd::ALL
+            .iter()
+            .position(|c| *c == SlashCmd::Help)
+            .unwrap();
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.screen, Screen::Chat);
+    }
+
+    #[test]
+    fn commands_screen_exit_quits() {
+        let mut app = RatatuiTui {
+            screen: Screen::Commands,
+            ..Default::default()
+        };
+        app.commands_index = SlashCmd::ALL
+            .iter()
+            .position(|c| *c == SlashCmd::Exit)
+            .unwrap();
+        let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Quit);
+    }
+
+    #[test]
+    fn drain_stream_accumulates_chunks_and_finishes() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            stream: Some(ChatStream {
+                rx,
+                buffer: String::new(),
+                usage: None,
+            }),
+            ..Default::default()
+        };
+        tx.send(StreamEvent::Chunk("hel".into())).unwrap();
+        tx.send(StreamEvent::Chunk("lo".into())).unwrap();
+        tx.send(StreamEvent::Done).unwrap();
+        app.drain_stream();
+        assert!(app.stream.is_none());
+        assert!(matches!(app.processing, ProcessingStatus::Idle));
+        assert_eq!(app.chat.last().map(|r| r.content.as_str()), Some("hello"));
+    }
+
+    #[test]
+    fn drain_stream_error_records_last_error() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            stream: Some(ChatStream {
+                rx,
+                buffer: String::new(),
+                usage: None,
+            }),
+            ..Default::default()
+        };
+        tx.send(StreamEvent::Error("boom".into())).unwrap();
+        app.drain_stream();
+        assert!(app.stream.is_none());
+        assert!(matches!(app.processing, ProcessingStatus::Idle));
+        assert!(app.last_error.is_some());
+    }
+
+    #[test]
+    fn drain_stream_usage_counter_tracks_session_total() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input_tokens: 10,
+            output_tokens: 5,
+            stream: Some(ChatStream {
+                rx,
+                buffer: String::new(),
+                usage: None,
+            }),
+            ..Default::default()
+        };
+        let usage = aether_provider::Usage::default();
+        tx.send(StreamEvent::Chunk("reply".into())).unwrap();
+        tx.send(StreamEvent::Usage(usage)).unwrap();
+        tx.send(StreamEvent::Done).unwrap();
+        app.drain_stream();
+        assert_eq!(app.input_tokens + app.output_tokens, 15);
     }
 }

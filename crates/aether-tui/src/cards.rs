@@ -195,7 +195,7 @@ fn last_space_in(s: &str) -> Option<usize> {
     s.char_indices()
         .filter(|&(_, c)| c == ' ')
         .map(|(i, _)| s[..i].chars().count())
-        .last()
+        .next_back()
 }
 
 /// Truncate `line` to at most `width` columns, appending `…` when it is cut.
