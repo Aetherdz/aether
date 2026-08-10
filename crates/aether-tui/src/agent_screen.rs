@@ -19,7 +19,7 @@ use aether_agent::{AgentPhase, AgentStopReason, VerdictPhase};
 const MAX_LINE: usize = 100;
 
 /// How many plan lines are shown in the PLAN panel.
-const MAX_PLAN_LINES: usize = 3;
+pub const MAX_PLAN_LINES: usize = 3;
 
 /// Tally of route verdicts seen so far.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -192,7 +192,7 @@ impl AgentScreenState {
 }
 
 /// Human-readable label for a route verdict.
-fn verdict_label(verdict: VerdictPhase) -> &'static str {
+pub fn verdict_label(verdict: VerdictPhase) -> &'static str {
     match verdict {
         VerdictPhase::Done => "Done",
         VerdictPhase::Continue => "Continue",
@@ -201,7 +201,7 @@ fn verdict_label(verdict: VerdictPhase) -> &'static str {
 }
 
 /// Human-readable label for a stop reason.
-fn stop_reason_label(reason: AgentStopReason) -> &'static str {
+pub fn stop_reason_label(reason: AgentStopReason) -> &'static str {
     match reason {
         AgentStopReason::Done => "Done",
         AgentStopReason::IterationCap => "IterationCap",

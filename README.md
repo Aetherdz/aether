@@ -14,7 +14,7 @@
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
   <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-163%20passing-brightgreen" alt="163 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-165%20passing-brightgreen" alt="165 tests passing" /></a>
 </p>
 
 ---
@@ -108,6 +108,11 @@ Prefer to build from source? See [Building from source](#building-from-source)
 
 > No API key required by default — **zen** is the built-in free provider.
 > Bring your own key anytime: `aether use anthropic/claude-sonnet-5`.
+
+> **zen privacy note** — the free `zen` endpoint is hosted by
+> **opencode.ai** (`https://opencode.ai/zen/v1`). Anything you send through
+> it (including code from your working directory) goes to that third party.
+> For sensitive work, prefer a local model (below) or your own key.
 
 ### Offline / local models (first-class)
 
@@ -264,8 +269,14 @@ parse but print a deprecation notice:
 - [x] `tui` — ratatui TUI v2: chrome header + tabs, live agent panels, plan cards, status line
 - [x] `benchmark/` — reproducible harness: **4.99 MB · ~112 ms · ~5 MB RSS**
 
-> Early development: APIs may shift until 1.0. Golden tests keep every port
-> honest — behavior is verified against reference outputs, never re-imagined.
+> **Stability note** — the checklist above means the features exist and pass
+> their test suites (165 tests, all green), not that the public API is frozen.
+> The **CLI surface** (`ask`/`agent`/`tui` flags, config file format, JSONL
+> session schema) is still pre-1.0 and may shift; the **interactive TUI** and
+> session files you create today are the least stable parts. `CHANGELOG.md`
+> tracks every change so you can see exactly what moved between releases.
+> Golden tests keep every port honest — behavior is verified against
+> reference outputs, never re-imagined.
 
 ## How the port works
 
@@ -285,6 +296,7 @@ this more than a rewrite — it's a faithful, faster, dependency-free twin.
 | [phase3-mcp-spec.md](docs/phase3-mcp-spec.md) | MCP server over stdio + Streamable HTTP |
 | [phase4-tools-agent-auth-tui-spec.md](docs/phase4-tools-agent-auth-tui-spec.md) | Sandboxed tools, 3-model agent loop, auth, ratatui TUI |
 | [inspiration-extraction.md](docs/inspiration-extraction.md) | Design notes extracted from the original AETHER |
+| [CHANGELOG.md](CHANGELOG.md) | Version history — every change between releases, SemVer-tracked |
 
 ## Security
 

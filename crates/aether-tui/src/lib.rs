@@ -25,7 +25,10 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{
+        Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Wrap,
+    },
 };
 
 use aether_agent::ChannelObserver;
@@ -85,9 +88,12 @@ mod theme {
     pub const TITLE: Color = Color::Rgb(0x38, 0xbd, 0xf8);
     pub const BORDER: Color = Color::Rgb(0x33, 0x41, 0x55);
     pub const MUTED: Color = Color::Rgb(0x64, 0x74, 0x8b);
+    pub const DANGER: Color = Color::Rgb(0xef, 0x44, 0x44);
     pub const SELECT_BG: Color = Color::Rgb(0x1e, 0x29, 0x3b);
     /// Background fill behind user messages (opencode-style "You" block).
     pub const USER_BG: Color = Color::Rgb(0x16, 0x22, 0x30);
+    /// Background fill behind fenced code blocks in the transcript.
+    pub const CODE_BG: Color = Color::Rgb(0x0f, 0x17, 0x22);
 
     pub fn title() -> Style {
         Style::default().fg(TITLE).add_modifier(Modifier::BOLD)
@@ -100,6 +106,9 @@ mod theme {
     }
     pub fn muted() -> Style {
         Style::default().fg(MUTED)
+    }
+    pub fn danger() -> Style {
+        Style::default().fg(DANGER).add_modifier(Modifier::BOLD)
     }
     pub fn border() -> Style {
         Style::default().fg(BORDER)
@@ -239,6 +248,8 @@ pub struct RatatuiTui {
     agent_state: agent_screen::AgentScreenState,
     /// Receiver draining AgentPhase events while an agent run is live.
     agent_rx: Option<std::sync::mpsc::Receiver<aether_agent::AgentPhase>>,
+    /// Iteration cap of the running agent loop (0 = unknown/unlimited).
+    agent_cap: u32,
     /// Resolved provider name, shown in the header bar.
     provider: String,
 }
@@ -267,6 +278,7 @@ impl Default for RatatuiTui {
             last_error: None,
             agent_state: agent_screen::AgentScreenState::default(),
             agent_rx: None,
+            agent_cap: 0,
             provider: String::new(),
         }
     }
@@ -494,6 +506,10 @@ impl RatatuiTui {
                     self.processing = ProcessingStatus::Streaming(n);
                 }
                 StreamEvent::Usage(u) => {
+                    let input = u.prompt_tokens.unwrap_or(0);
+                    let output = u.completion_tokens.unwrap_or(0);
+                    self.input_tokens += input;
+                    self.output_tokens += output;
                     if let Some(s) = &mut self.stream {
                         s.usage = Some(u);
                     }
@@ -515,6 +531,8 @@ impl RatatuiTui {
     }
 
     /// Persist a completed reply to the session and append it to the chat.
+    /// Token counters were already updated live by [`Self::drain_stream`]
+    /// when the `Usage` event arrived, so only the ledger row is written here.
     fn finish_reply(&mut self, reply: String, usage: Option<aether_provider::Usage>) {
         if let Some(session) = &self.active {
             let _ = session.append("assistant", &reply);
@@ -526,8 +544,6 @@ impl RatatuiTui {
                     input_tokens: input,
                     output_tokens: output,
                 });
-                self.input_tokens += input;
-                self.output_tokens += output;
             }
         }
         self.chat.push(ChatRow {
@@ -747,6 +763,7 @@ impl RatatuiTui {
         .with_observer(observer);
         self.agent_rx = Some(rx);
         self.agent_state = agent_screen::AgentScreenState::default();
+        self.agent_cap = 6;
         let task = self
             .last_question()
             .unwrap_or("a small demo task")
@@ -927,22 +944,22 @@ impl RatatuiTui {
         frame.render_stateful_widget(list, list_area, &mut self.list_state);
 
         let totals = &self.totals;
-        let left = match &self.last_error {
-            Some(err) => format!(
-                "{} sessions · {} turns · {} in / {} out   error: {}",
-                totals.sessions,
-                totals.turns,
-                totals.input_tokens,
-                totals.output_tokens,
-                err.to_string().lines().next().unwrap_or_default()
+        let (left, left_style) = match &self.last_error {
+            Some(err) => (
+                format!("✗ {}", err.to_string().lines().next().unwrap_or_default()),
+                theme::danger(),
             ),
-            None => format!(
-                "{} sessions · {} turns · {} in / {} out",
-                totals.sessions, totals.turns, totals.input_tokens, totals.output_tokens
+            None => (
+                format!(
+                    "{} sessions · {} turns · {} in / {} out",
+                    totals.sessions, totals.turns, totals.input_tokens, totals.output_tokens
+                ),
+                theme::muted(),
             ),
         };
         let right =
             "j/k or wheel: move · Enter: open · d: delete · r: rename · ctrl+P: model · q: quit";
+        self.render_footer_styled(frame, footer_area, &left, right, left_style);
         self.render_footer(frame, footer_area, &left, right);
     }
 
@@ -989,11 +1006,35 @@ impl RatatuiTui {
             .wrap(Wrap { trim: false });
         frame.render_widget(transcript, body_area);
 
-        let status = match self.processing {
-            ProcessingStatus::Idle => Span::styled("ready", theme::muted()),
-            ProcessingStatus::Thinking => Span::styled("⏳ thinking…", theme::accent()),
-            ProcessingStatus::Streaming(n) => {
-                Span::styled(format!("● streaming · {n} chunks"), theme::accent())
+        if total > viewport {
+            let sb_area = Rect::new(
+                body_area.right().saturating_sub(1),
+                body_area.y,
+                1,
+                body_area.height,
+            );
+            let mut sb_state = ScrollbarState::new(total).position(end.saturating_sub(viewport));
+            frame.render_stateful_widget(
+                Scrollbar::default()
+                    .orientation(ScrollbarOrientation::VerticalRight)
+                    .style(theme::border()),
+                sb_area,
+                &mut sb_state,
+            );
+        }
+
+        let status = if let Some(err) = &self.last_error {
+            Span::styled(
+                format!("✗ {}", err.to_string().lines().next().unwrap_or_default()),
+                theme::danger(),
+            )
+        } else {
+            match self.processing {
+                ProcessingStatus::Idle => Span::styled("ready", theme::muted()),
+                ProcessingStatus::Thinking => Span::styled("⏳ thinking…", theme::accent()),
+                ProcessingStatus::Streaming(n) => {
+                    Span::styled(format!("● streaming · {n} chunks"), theme::accent())
+                }
             }
         };
         frame.render_widget(Paragraph::new(Line::from(status)), status_area);
@@ -1015,13 +1056,6 @@ impl RatatuiTui {
         frame.render_widget(input_widget, input_area);
 
         let usage = render::usage_summary(Some(self.input_tokens), Some(self.output_tokens), None);
-        let left = match &self.last_error {
-            Some(err) => format!(
-                "{usage}   error: {}",
-                err.to_string().lines().next().unwrap_or_default()
-            ),
-            None => usage,
-        };
         let mut right = String::new();
         if !self.model.is_empty() {
             right.push_str("model: ");
@@ -1029,7 +1063,7 @@ impl RatatuiTui {
             right.push_str("   ");
         }
         right.push_str("Enter: send · j/k or wheel: scroll · ctrl+P: model · Esc: back · q: quit");
-        self.render_footer(frame, footer_area, &left, &right);
+        self.render_footer(frame, footer_area, &usage, &right);
         self.draw_usage(frame, usage_area);
     }
 
@@ -1051,29 +1085,92 @@ impl RatatuiTui {
         if row.role == "user" {
             return self.render_user_block(&row.content, width);
         }
-        let prefix = match row.role.as_str() {
-            "system" => Span::styled("sys  ", theme::muted()),
-            _ => Span::styled("ai   ", theme::ai()),
-        };
-        if let (true, Some(card)) = (
-            row.role == "assistant",
-            cards::extract_plan_card(&row.content),
-        ) {
-            let total = card.lines.len();
-            let done = card
-                .lines
-                .iter()
-                .filter(|l| l.trim_start().starts_with("- [x]"))
-                .count();
-            let mut lines = cards::render_plan_card(&card, width);
-            let mut meter =
-                cards::render_todos_pip_meter(done, total, width.saturating_sub(6).min(20));
-            meter.spans.insert(0, Span::raw("  "));
-            lines.push(meter);
-            lines.insert(0, Line::from(prefix));
-            return lines;
+        if row.role == "assistant" {
+            if let Some(card) = cards::extract_plan_card(&row.content) {
+                let total = card.lines.len();
+                let done = card
+                    .lines
+                    .iter()
+                    .filter(|l| l.trim_start().starts_with("- [x]"))
+                    .count();
+                let mut lines = cards::render_plan_card(&card, width);
+                let mut meter =
+                    cards::render_todos_pip_meter(done, total, width.saturating_sub(6).min(20));
+                meter.spans.insert(0, Span::raw("  "));
+                lines.push(meter);
+                lines.insert(0, Line::from(Span::styled("ai   ", theme::ai())));
+                return lines;
+            }
+            return self.render_assistant_message(&row.content, width);
         }
-        vec![Line::from(vec![prefix, Span::raw(row.content.as_str())])]
+        vec![Line::from(vec![
+            Span::styled("sys  ", theme::muted()),
+            Span::raw(row.content.as_str()),
+        ])]
+    }
+
+    /// Render an assistant reply, highlighting fenced code blocks on a filled
+    /// background with preserved indentation instead of mangling them by wrap.
+    fn render_assistant_message<'a>(&self, content: &'a str, width: u16) -> Vec<Line<'a>> {
+        let inner = width.saturating_sub(2) as usize;
+        let mut lines: Vec<Line> = Vec::new();
+        let mut rest = content;
+        while let Some(open) = rest.find("```") {
+            let before = &rest[..open];
+            if !before.trim().is_empty() {
+                for para in render::wrap(before.trim_end(), inner.saturating_sub(5).max(10)) {
+                    lines.push(Line::from(vec![
+                        Span::styled("ai   ", theme::ai()),
+                        Span::raw(para),
+                    ]));
+                }
+            }
+            let after_open = &rest[open + 3..];
+            let end = after_open.find("```").unwrap_or(after_open.len());
+            let block = &after_open[..end];
+            let (lang, code) = match block.find('\n') {
+                Some(nl) => (&block[..nl], &block[nl + 1..]),
+                None => (block, ""),
+            };
+            let code_style = Style::default().bg(theme::CODE_BG).fg(Color::White);
+            lines.push(Line::from(Span::styled(
+                format!("  {lang} "),
+                theme::ai().bg(theme::CODE_BG),
+            )));
+            for code_line in code.lines() {
+                let indent = code_line
+                    .chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect::<String>();
+                let content_part = &code_line[indent.len()..];
+                for para in render::wrap(content_part, inner.saturating_sub(indent.len()).max(10)) {
+                    let pad = inner.saturating_sub(indent.len() + para.chars().count());
+                    let mut spans = vec![Span::styled(indent.clone(), code_style)];
+                    spans.push(Span::styled(para, code_style));
+                    if pad > 0 {
+                        spans.push(Span::styled(" ".repeat(pad), code_style));
+                    }
+                    lines.push(Line::from(spans));
+                }
+            }
+            rest = if end < after_open.len() {
+                &after_open[end + 3..]
+            } else {
+                ""
+            };
+        }
+        if !rest.trim().is_empty() {
+            for para in render::wrap(rest.trim_end(), inner.saturating_sub(5).max(10)) {
+                lines.push(Line::from(vec![
+                    Span::styled("ai   ", theme::ai()),
+                    Span::raw(para),
+                ]));
+            }
+        }
+        if lines.is_empty() {
+            lines.push(Line::from(Span::styled("ai   ", theme::ai())));
+        }
+        lines
     }
 
     /// opencode-style user block: green "you" label + white text on a filled
@@ -1105,11 +1202,23 @@ impl RatatuiTui {
 
     /// Two-part footer: totals on the left, keybindings on the right.
     fn render_footer(&self, frame: &mut Frame, area: Rect, left: &str, right: &str) {
+        self.render_footer_styled(frame, area, left, right, theme::muted());
+    }
+
+    /// Two-part footer with a custom style for the left segment.
+    fn render_footer_styled(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        left: &str,
+        right: &str,
+        left_style: Style,
+    ) {
         let left_len = render::visible_length(left) as u16 + 2;
         let horizontal = Layout::horizontal([Constraint::Length(left_len), Constraint::Min(0)]);
         let [left_area, right_area] = horizontal.areas(area);
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(left, theme::muted()))),
+            Paragraph::new(Line::from(Span::styled(left, left_style))),
             left_area,
         );
         frame.render_widget(
@@ -1126,40 +1235,111 @@ impl RatatuiTui {
         }
         let vertical = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]);
         let [panel_area, footer_area] = vertical.areas(body);
+        let horizontal = Layout::horizontal([
+            Constraint::Percentage(34),
+            Constraint::Percentage(38),
+            Constraint::Percentage(28),
+        ]);
+        let [plan_area, build_area, route_area] = horizontal.areas(panel_area);
 
-        let lines: Vec<Line> = self
-            .agent_state
-            .status_lines()
-            .into_iter()
-            .map(|line| {
-                if matches!(line.as_str(), "PLAN" | "BUILD" | "ROUTE") {
-                    Line::from(Span::styled(line, theme::title()))
-                } else if line.starts_with("DONE:") {
-                    Line::from(Span::styled(line, theme::accent()))
-                } else {
-                    Line::from(Span::raw(line))
-                }
-            })
-            .collect();
-        let panel = Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(theme::border())
-                    .title(" agent loop "),
-            )
-            .wrap(Wrap { trim: false });
-        frame.render_widget(panel, panel_area);
+        self.draw_agent_panel(frame, plan_area, "PLAN", theme::title());
+        self.draw_agent_panel(frame, build_area, "BUILD", theme::accent());
+        self.draw_agent_panel(frame, route_area, "ROUTE", theme::ai());
 
         let left = if self.agent_state.stopped {
             "agent finished".to_string()
         } else if self.agent_rx.is_some() {
-            "agent running — plan → build → route".to_string()
+            let cap = self.agent_cap;
+            let iter = self.agent_state.current_iteration;
+            if cap > 0 {
+                format!("agent running — iteration {iter}/{cap} · plan → build → route")
+            } else {
+                "agent running — plan → build → route".to_string()
+            }
         } else {
             "press Enter to run the agent loop".to_string()
         };
         let right = "Enter: run · Tab: switch · Esc: back";
         self.render_footer(frame, footer_area, &left, right);
+    }
+
+    /// Render one agent panel (PLAN / BUILD / ROUTE) as a bordered box with a
+    /// colored header, progress meter for BUILD, and the state lines inside.
+    fn draw_agent_panel(&self, frame: &mut Frame, area: Rect, title: &str, header_style: Style) {
+        let state = &self.agent_state;
+        let mut lines: Vec<Line> = Vec::new();
+
+        if title == "PLAN" {
+            if state.plan_text.is_empty() {
+                lines.push(Line::from(Span::styled("  planning…", theme::muted())));
+            } else {
+                for plan_line in state.plan_text.lines().take(agent_screen::MAX_PLAN_LINES) {
+                    lines.push(Line::from(Span::raw(format!("  {}", plan_line))));
+                }
+            }
+        } else if title == "BUILD" {
+            let cap = self.agent_cap;
+            if cap > 0 {
+                let pct = (state.current_iteration as f32 / cap as f32).clamp(0.0, 1.0);
+                let width = 18usize;
+                let filled = (pct * width as f32).round() as usize;
+                let bar = format!(
+                    "  [{}] {}%",
+                    "█".repeat(filled) + &"░".repeat(width - filled),
+                    (pct * 100.0).round() as u32
+                );
+                lines.push(Line::from(Span::styled(bar, theme::accent())));
+            }
+            lines.push(Line::from(Span::styled(
+                format!("  iteration: {}", state.current_iteration),
+                theme::muted(),
+            )));
+            lines.push(Line::from(Span::styled(
+                format!("  tool calls: {}", state.total_tool_calls),
+                theme::muted(),
+            )));
+            match &state.last_tool_name {
+                Some(name) => lines.push(Line::from(Span::raw(format!("  last tool: {name}")))),
+                None => lines.push(Line::from(Span::styled("  last tool: —", theme::muted()))),
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "  done {} · continue {} · revise {}",
+                    state.verdict_counters.done,
+                    state.verdict_counters.continue_,
+                    state.verdict_counters.revise
+                ),
+                theme::muted(),
+            )));
+            match state.current_verdict {
+                Some(v) => lines.push(Line::from(Span::styled(
+                    format!("  current: {}", agent_screen::verdict_label(v)),
+                    theme::accent(),
+                ))),
+                None => lines.push(Line::from(Span::styled(
+                    "  current: waiting",
+                    theme::muted(),
+                ))),
+            }
+        }
+
+        if let Some(reason) = state.stop_reason {
+            lines.push(Line::from(Span::styled(
+                format!("DONE: {}", agent_screen::stop_reason_label(reason)),
+                theme::accent(),
+            )));
+        }
+
+        let panel = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border())
+                    .title(Span::styled(format!(" {title} "), header_style)),
+            )
+            .wrap(Wrap { trim: false });
+        frame.render_widget(panel, area);
     }
 
     fn draw_palette(&mut self, frame: &mut Frame, body: Rect) {
@@ -1679,5 +1859,50 @@ mod tests {
         tx.send(StreamEvent::Done).unwrap();
         app.drain_stream();
         assert_eq!(app.input_tokens + app.output_tokens, 15);
+    }
+
+    #[test]
+    fn usage_updates_counters_live_before_done() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            stream: Some(ChatStream {
+                rx,
+                buffer: String::new(),
+                usage: None,
+            }),
+            ..Default::default()
+        };
+        let usage = aether_provider::Usage {
+            prompt_tokens: Some(12),
+            completion_tokens: Some(7),
+            ..aether_provider::Usage::default()
+        };
+        tx.send(StreamEvent::Usage(usage)).unwrap();
+        app.drain_stream();
+        assert_eq!(app.input_tokens, 12);
+        assert_eq!(app.output_tokens, 7);
+        assert!(app.stream.is_some()); // not finished yet
+    }
+
+    #[test]
+    fn assistant_message_renders_code_block_with_background() {
+        let app = RatatuiTui::default();
+        let lines = app.render_assistant_message(
+            "explain:\n```rust\nfn main() {\n    hi();\n}\n```\ndone",
+            40,
+        );
+        assert!(lines.len() >= 5);
+        let code_style = Style::default().bg(theme::CODE_BG);
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.spans.iter().any(|s| s.style.bg == Some(theme::CODE_BG)))
+        );
+        let has_lang = lines
+            .iter()
+            .any(|l| l.spans.iter().any(|s| s.content.contains("rust")));
+        assert!(has_lang, "code block should show its language label");
+        assert_eq!(code_style.bg, Some(theme::CODE_BG));
     }
 }
