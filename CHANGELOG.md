@@ -19,8 +19,12 @@ minors may still break surface APIs).
 - TUI: scrollbar on the transcript when history exceeds the viewport.
 - TUI: live token accounting — `input`/`output` counters update as `Usage`
   events stream in, not only when the reply finishes.
-- Tests: usage-counter live update, code-block rendering, and 10 earlier
-  editing/palette/stream cases (now 55 in `aether-tui`, 165 workspace-wide).
+- Agent/TUI: `write_file` diffs — `ToolResult` and `AgentPhase::ToolCalled`
+  carry a rendered `+`/`-` preview, and the Agent BUILD panel shows the last
+  write diff inline (up to 12 lines) under the tool name.
+- Tests: usage-counter live update, code-block rendering, write-diff carry +
+  BUILD-panel rendering, and 10 earlier editing/palette/stream cases (now 56
+  in `aether-tui`, 167 workspace-wide).
 - README: explicit privacy note for the built-in free `zen` provider
   (hosted by opencode.ai at `https://opencode.ai/zen/v1`), clarified
   stability wording, and a rewritten feature checklist.

@@ -14,7 +14,7 @@
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
   <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-165%20passing-brightgreen" alt="165 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-167%20passing-brightgreen" alt="167 tests passing" /></a>
 </p>
 
 ---
@@ -270,7 +270,7 @@ parse but print a deprecation notice:
 - [x] `benchmark/` — reproducible harness: **4.99 MB · ~112 ms · ~5 MB RSS**
 
 > **Stability note** — the checklist above means the features exist and pass
-> their test suites (165 tests, all green), not that the public API is frozen.
+> their test suites (167 tests, all green), not that the public API is frozen.
 > The **CLI surface** (`ask`/`agent`/`tui` flags, config file format, JSONL
 > session schema) is still pre-1.0 and may shift; the **interactive TUI** and
 > session files you create today are the least stable parts. `CHANGELOG.md`
