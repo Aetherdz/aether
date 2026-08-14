@@ -182,6 +182,14 @@ async fn cmd_session(action: SessionAction) -> Result<()> {
 
 /// Launch the ratatui terminal UI.
 fn cmd_tui() -> Result<()> {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        return Err(Error::InvalidInput(
+            "aether tui needs an interactive terminal (stdin and stdout must be a TTY); \
+             pipe data through 'aether ask' or 'aether chat' instead"
+                .to_string(),
+        ));
+    }
     use aether_tui::{RatatuiTui, Tui};
     let mut tui = RatatuiTui::new().map_err(|e| Error::Config(e.to_string()))?;
     tui.run().map_err(|e| Error::Config(e.to_string()))
