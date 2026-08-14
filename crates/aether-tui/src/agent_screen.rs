@@ -19,7 +19,7 @@ use aether_agent::{AgentPhase, AgentStopReason, VerdictPhase};
 const MAX_LINE: usize = 100;
 
 /// Maximum diff lines rendered under the last tool in the BUILD panel.
-const MAX_DIFF_LINES: usize = 12;
+pub const MAX_DIFF_LINES: usize = 12;
 
 /// How many plan lines are shown in the PLAN panel.
 pub const MAX_PLAN_LINES: usize = 3;

@@ -295,6 +295,19 @@ fn clamp_scroll(scroll: usize, total: usize, viewport: usize) -> usize {
     scroll.min(total.saturating_sub(viewport))
 }
 
+/// Style one diff line for the BUILD panel: `+` additions in accent
+/// (green), `-` removals in danger (red), context lines in muted.
+fn diff_line_span(line: &str) -> Span<'static> {
+    let style = if line.starts_with("+ ") {
+        theme::accent()
+    } else if line.starts_with("- ") {
+        theme::danger()
+    } else {
+        theme::muted()
+    };
+    Span::styled(format!("    {line}"), style)
+}
+
 impl RatatuiTui {
     /// Build the UI and load the session list + ledger totals.
     pub fn new() -> Result<Self, TuiError> {
@@ -1302,6 +1315,11 @@ impl RatatuiTui {
                 Some(name) => lines.push(Line::from(Span::raw(format!("  last tool: {name}")))),
                 None => lines.push(Line::from(Span::styled("  last tool: —", theme::muted()))),
             }
+            if let Some(diff) = &state.last_diff {
+                for diff_line in diff.lines().take(agent_screen::MAX_DIFF_LINES) {
+                    lines.push(Line::from(diff_line_span(diff_line)));
+                }
+            }
         } else {
             lines.push(Line::from(Span::styled(
                 format!(
@@ -1491,6 +1509,16 @@ mod tests {
         let sessions = dir.join("sessions");
         let _ = std::fs::create_dir_all(&sessions);
         dir
+    }
+
+    #[test]
+    fn diff_line_span_colors_by_prefix() {
+        let add = diff_line_span("+ new line");
+        assert_eq!(add.style.fg, Some(theme::ACCENT));
+        let remove = diff_line_span("- old line");
+        assert_eq!(remove.style.fg, Some(theme::DANGER));
+        let context = diff_line_span("  unchanged");
+        assert_eq!(context.style.fg, Some(theme::MUTED));
     }
 
     #[test]
