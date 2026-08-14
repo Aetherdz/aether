@@ -139,15 +139,10 @@ impl UndoJournal {
     /// Read and parse every snapshot file currently on disk.
     fn read_all(&self) -> Result<Vec<SnapFile>> {
         let mut snaps = Vec::new();
-        let entries = match self.sandbox.read_dir(UNDO_DIR_NAME) {
-            Ok(e) => e,
-            Err(Error::InvalidInput(ref m))
-                if m.contains("No such file") || m.contains("not found") =>
-            {
-                return Ok(snaps);
-            }
-            Err(e) => return Err(e),
-        };
+        if !self.sandbox.exists(UNDO_DIR_NAME) {
+            return Ok(snaps);
+        }
+        let entries = self.sandbox.read_dir(UNDO_DIR_NAME)?;
         for entry in entries {
             if !entry.name.ends_with(".snap") {
                 continue;
