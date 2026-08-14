@@ -177,6 +177,16 @@ three models cooperate on one task, each with its own role:
 3. **route** — a router watches the result and decides: keep going, revise
    the plan, or declare it done.
 
+**Command approval gate.** `write_file` shows a diff and asks before
+overwriting; `run_command` pauses before dangerous commands — destructive
+(`rm -rf` on absolute/home paths), system-level (`sudo`, `shutdown`,
+`mkfs`, …), remote-exec (`curl | sh`, `bash <(...)`), and publish actions
+(`npm publish`, `git push --force`, …). In an interactive terminal answer
+`y/N`; without a TTY the gate refuses unless `--yes` is given. Commands the
+user trusts for a project bypass the gate via `.aether-allowlist` in the
+project root (one command prefix per line, `#` comments) or the
+`AETHER_AGENT_ALLOW` env var (comma/newline separated).
+
 The loop runs until the router says **done** or the iteration cap is hit.
 
 ```sh

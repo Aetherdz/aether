@@ -135,9 +135,16 @@ cargo test -p aether-agent --lib escape_
 
 1. **`run_command` is not filesystem-sandboxed.** A shell command can
    `cd .. && cat /etc/passwd`. The filesystem *tools* are now capability-
-   confined; command execution is a separate boundary. Mitigation plan:
-   interactive approval for classified-dangerous commands (delete, write
-   outside root, network, sudo) — tracked as the next hardening step.
+   confined; command execution is a separate boundary. Mitigation shipped:
+   a classification-based approval gate for dangerous commands (destructive
+   `rm` outside the project, `sudo`/`su`, system control, `curl|sh`
+   remote-exec, publish actions) that pauses for `y/N` confirmation under
+   the interactive policy and refuses on a non-TTY stdin without `--yes`.
+   Per-project bypass via `.aether-allowlist` (one command prefix per line)
+   or `AETHER_AGENT_ALLOW` (comma/newline separated). The gate is a policy
+   layer, not a kernel boundary — a user-`y` (or allowlisted) command still
+   has full shell power, so treat `--yes` / allowlist entries as explicit
+   trust grants.
 2. **Non-Linux platforms** get cap-std's capability-aware fallback, not the
    kernel-level `openat2` guarantee. Same confinement, weaker race
    guarantees; tests above run on Linux CI.
