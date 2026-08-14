@@ -238,8 +238,10 @@ pub struct RatatuiTui {
     /// Palette state: available models + the highlighted one.
     palette_models: Vec<String>,
     palette_index: usize,
+    palette_state: ListState,
     /// Highlighted row of the slash-command picker.
     commands_index: usize,
+    commands_state: ListState,
     /// Ledger totals footer.
     totals: aether_session::Totals,
     /// The most recent background error, shown in the footer.
@@ -273,7 +275,9 @@ impl Default for RatatuiTui {
             model: String::new(),
             palette_models: Vec::new(),
             palette_index: 0,
+            palette_state: ListState::default(),
             commands_index: 0,
+            commands_state: ListState::default(),
             totals: aether_session::Totals::default(),
             last_error: None,
             agent_state: agent_screen::AgentScreenState::default(),
@@ -1386,9 +1390,8 @@ impl RatatuiTui {
             )
             .highlight_style(theme::highlight())
             .highlight_symbol("▸ ");
-        let mut state = ListState::default();
-        state.select(Some(self.palette_index));
-        frame.render_widget(list, palette_rect);
+        self.palette_state.select(Some(self.palette_index));
+        frame.render_stateful_widget(list, palette_rect, &mut self.palette_state);
     }
 
     fn draw_commands(&mut self, frame: &mut Frame, body: Rect) {
@@ -1416,12 +1419,11 @@ impl RatatuiTui {
             )
             .highlight_style(theme::highlight())
             .highlight_symbol("▸ ");
-        let mut state = ListState::default();
-        state.select(Some(
+        self.commands_state.select(Some(
             self.commands_index
                 .min(SlashCmd::ALL.len().saturating_sub(1)),
         ));
-        frame.render_widget(list, cmd_rect);
+        frame.render_stateful_widget(list, cmd_rect, &mut self.commands_state);
     }
 
     fn show_help(&mut self) {
@@ -1519,6 +1521,36 @@ mod tests {
         assert_eq!(remove.style.fg, Some(theme::DANGER));
         let context = diff_line_span("  unchanged");
         assert_eq!(context.style.fg, Some(theme::MUTED));
+    }
+
+    #[test]
+    fn palette_and_commands_render_highlight_symbol() {
+        use ratatui::backend::TestBackend;
+
+        let mut app = RatatuiTui::default();
+        app.palette_models = vec!["model-a".to_string(), "model-b".to_string()];
+        app.palette_index = 1;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        for screen in [Screen::Palette, Screen::Commands] {
+            app.screen = screen;
+            terminal
+                .draw(|frame| app.draw(frame))
+                .expect("draw must not fail");
+            let buffer = terminal.backend().buffer();
+            let mut found = false;
+            for y in 0..buffer.area.height {
+                for x in 0..buffer.area.width {
+                    if let Some(cell) = buffer.cell((x, y)) {
+                        if cell.symbol() == "▸" {
+                            found = true;
+                        }
+                    }
+                }
+            }
+            assert!(found, "{screen:?} must render the ▸ highlight symbol");
+        }
     }
 
     #[test]
