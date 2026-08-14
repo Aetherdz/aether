@@ -116,7 +116,10 @@ Prefer to build from source? See [Building from source](#building-from-source)
 > **zen privacy note** — the free `zen` endpoint is hosted by
 > **opencode.ai** (`https://opencode.ai/zen/v1`). Anything you send through
 > it (including code from your working directory) goes to that third party.
-> For sensitive work, prefer a local model (below) or your own key.
+> Aether itself sends only the conversation payload — no telemetry, no
+> account, no key for free models — see [docs/zen-privacy.md](docs/zen-privacy.md)
+> for the exact request shape and verification commands. For sensitive work,
+> prefer a local model (below) or your own key.
 
 ### Offline / local models (first-class)
 
