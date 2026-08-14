@@ -67,7 +67,7 @@ fn cmd_help() -> Result<()> {
          \x20 aether session show ID    show a full transcript\n\
          \x20 aether session resume ID  continue a session in chat\n\
          \x20 aether session search X   search past sessions\n\
-         \x20 aether sync status        show sync state (gist/folder)"
+         \x20 aether session sync ...   sync sessions across devices"
     );
     Ok(())
 }
@@ -200,29 +200,36 @@ fn resolve(
     config: &aether_core::config::AetherConfig,
     provider: Option<&str>,
     model: Option<&str>,
-) -> (OpenAICompatibleClient, String) {
+) -> Result<(OpenAICompatibleClient, String)> {
     let resolved = resolve_default(config, provider, model);
     if let Some(notice) = &resolved.notice {
         eprintln!("{notice}");
     }
-    let client = resolved
-        .provider
-        .client()
-        .expect("failed to build provider client");
-    (client, resolved.model)
+    let client = resolved.provider.client()?;
+    Ok((client, resolved.model))
 }
 
 async fn cmd_ask(question: &str, provider: Option<&str>, model: Option<&str>) -> Result<()> {
     let config = load_config()?;
-    let (client, model) = resolve(&config, provider, model);
+    let (client, model) = resolve(&config, provider, model)?;
     stream_print(&client, &model, question).await
 }
 
 async fn cmd_chat(provider: Option<&str>, model: Option<&str>) -> Result<()> {
     let config = load_config()?;
-    let (client, model) = resolve(&config, provider, model);
+    let (client, model) = resolve(&config, provider, model)?;
 
     println!("aether chat — model {model} (exit: Ctrl-D or /exit)");
+    let mut messages = Vec::new();
+    run_chat_loop(&client, &model, &mut messages, None).await
+}
+
+async fn run_chat_loop(
+    client: &OpenAICompatibleClient,
+    model: &str,
+    messages: &mut Vec<ChatMessage>,
+    session: Option<&Session>,
+) -> Result<()> {
     let mut reader = rustyline::DefaultEditor::new().map_err(|e| Error::Config(e.to_string()))?;
     loop {
         let readline = reader.readline("aether> ");
@@ -236,8 +243,31 @@ async fn cmd_chat(provider: Option<&str>, model: Option<&str>) -> Result<()> {
         if line == "/exit" || line == "quit" || line == "exit" {
             break;
         }
+        if let Some(session) = session {
+            session.append("user", &line)?;
+        }
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: line.clone(),
+            ..ChatMessage::default()
+        });
         println!("\n{MODEL_SEPARATOR}");
-        stream_print(&client, &model, &line).await?;
+        let (reply, usage) = stream_collect(client, model, messages).await?;
+        messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: reply.clone(),
+            ..ChatMessage::default()
+        });
+        if let Some(session) = session {
+            session.append("assistant", &reply)?;
+            if let Some(u) = usage {
+                session.append_usage(SessionMeta {
+                    turns: 1,
+                    input_tokens: u.prompt_tokens.unwrap_or(0),
+                    output_tokens: u.completion_tokens.unwrap_or(0),
+                })?;
+            }
+        }
         println!("\n{MODEL_SEPARATOR}\n");
     }
     Ok(())
@@ -490,47 +520,11 @@ fn resolve_backend(state: &aether_sync::SyncState) -> Result<Backend> {
 
 async fn cmd_chat_with_history(session: Session, history: Vec<ChatMessage>) -> Result<()> {
     let config = load_config()?;
-    let (client, model) = resolve(&config, None, None);
+    let (client, model) = resolve(&config, None, None)?;
 
     println!("model {model} (exit: Ctrl-D or /exit)");
-    let mut reader = rustyline::DefaultEditor::new().map_err(|e| Error::Config(e.to_string()))?;
     let mut messages = history;
-    loop {
-        let readline = reader.readline("aether> ");
-        let line = match readline {
-            Ok(line) => line.trim().to_string(),
-            Err(_) => break,
-        };
-        if line.is_empty() {
-            continue;
-        }
-        if line == "/exit" || line == "quit" || line == "exit" {
-            break;
-        }
-        session.append("user", &line)?;
-        messages.push(ChatMessage {
-            role: "user".to_string(),
-            content: line.clone(),
-            ..ChatMessage::default()
-        });
-        println!("\n{MODEL_SEPARATOR}");
-        let (reply, usage) = stream_collect(&client, &model, &messages).await?;
-        messages.push(ChatMessage {
-            role: "assistant".to_string(),
-            content: reply.clone(),
-            ..ChatMessage::default()
-        });
-        session.append("assistant", &reply)?;
-        if let Some(u) = usage {
-            session.append_usage(SessionMeta {
-                turns: 1,
-                input_tokens: u.prompt_tokens.unwrap_or(0),
-                output_tokens: u.completion_tokens.unwrap_or(0),
-            })?;
-        }
-        println!("\n{MODEL_SEPARATOR}\n");
-    }
-    Ok(())
+    run_chat_loop(&client, &model, &mut messages, Some(&session)).await
 }
 
 async fn cmd_agent(
@@ -543,7 +537,7 @@ async fn cmd_agent(
     yes: bool,
 ) -> Result<()> {
     let config = load_config()?;
-    let (client, model) = resolve(&config, provider, None);
+    let (client, model) = resolve(&config, provider, None)?;
     let plan_model = plan_model.unwrap_or(&model).to_string();
     let build_model = build_model.unwrap_or(&model).to_string();
     let route_model = route_model.unwrap_or(&model).to_string();
