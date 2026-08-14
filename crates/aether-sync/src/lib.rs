@@ -277,6 +277,7 @@ async fn fetch_bundle(backend: &Backend) -> Result<Option<SessionBundle>> {
             }
             let raw = std::fs::read_to_string(&file)?;
             let bundle: SessionBundle = serde_json::from_str(&raw)?;
+            validate_version(&bundle)?;
             Ok(Some(bundle))
         }
         Backend::Gist { id } => {
@@ -305,6 +306,7 @@ async fn fetch_bundle(backend: &Backend) -> Result<Option<SessionBundle>> {
             match json["files"][GIST_FILENAME]["content"].as_str() {
                 Some(content) => {
                     let bundle: SessionBundle = serde_json::from_str(content)?;
+                    validate_version(&bundle)?;
                     Ok(Some(bundle))
                 }
                 None => Ok(None),
@@ -374,6 +376,16 @@ fn line_timestamp(line: &str) -> i64 {
 
 fn state_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("sync.json"))
+}
+
+fn validate_version(bundle: &SessionBundle) -> Result<()> {
+    if bundle.v != BUNDLE_VERSION {
+        return Err(Error::InvalidInput(format!(
+            "unsupported sync bundle version {} (expected {BUNDLE_VERSION})",
+            bundle.v
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -482,6 +494,22 @@ mod tests {
         save_state(&state).unwrap();
         let loaded = load_state().unwrap();
         assert_eq!(loaded, state);
+    }
+
+    #[test]
+    fn rejects_unknown_bundle_version() {
+        let bad = SessionBundle {
+            v: BUNDLE_VERSION + 1,
+            device_id: "device-x".into(),
+            sessions: HashMap::new(),
+        };
+        assert!(validate_version(&bad).is_err());
+        let good = SessionBundle {
+            v: BUNDLE_VERSION,
+            device_id: "device-x".into(),
+            sessions: HashMap::new(),
+        };
+        assert!(validate_version(&good).is_ok());
     }
 
     #[test]
