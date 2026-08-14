@@ -21,17 +21,43 @@ jobs:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build (debug)
-        run: cargo build
+      - name: Build (debug, whole workspace)
+        run: cargo build --workspace
 
-      - name: Test
-        run: cargo test
+      - name: Test (whole workspace)
+        run: cargo test --workspace
 
-      - name: Clippy (hard gate)
-        run: cargo clippy -- -D warnings
+      - name: Clippy (hard gate, all targets)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rustfmt
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit dependencies (advisories)
+        run: cargo audit
+
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: License + advisory policy check
+        run: cargo deny check
 
   golden:
     runs-on: ubuntu-latest

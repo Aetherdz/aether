@@ -1,0 +1,30 @@
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+# CDLA-Permissive-2.0 comes from webpki-roots (the Rustls root-cert store),
+# Apache-2.0 WITH LLVM-exception from winx (cap-std's Windows sys crate) —
+# cargo-deny v0.20.2 requires the WITH-exception variant to be listed
+# explicitly, so both appear above.
+
+[advisories]
+version = 2
+# cargo-audit already gates advisories in its own job; deny is belt-and-braces.
+yanked = "deny"
+
+[bans]
+# Multiple semver lines of the same crate are normal in a real dependency
+# graph (base64 0.22/0.23, getrandom 0.2/0.4, schemars 0.8/1.x, ... come from
+# different transitive chains). Yanked-version blocking lives in
+# [advisories] below; duplicate detection can be enabled per-target later.
+multiple-versions = "warn"
