@@ -1527,9 +1527,11 @@ mod tests {
     fn palette_and_commands_render_highlight_symbol() {
         use ratatui::backend::TestBackend;
 
-        let mut app = RatatuiTui::default();
-        app.palette_models = vec!["model-a".to_string(), "model-b".to_string()];
-        app.palette_index = 1;
+        let mut app = RatatuiTui {
+            palette_models: vec!["model-a".to_string(), "model-b".to_string()],
+            palette_index: 1,
+            ..Default::default()
+        };
 
         let backend = TestBackend::new(80, 24);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -1542,10 +1544,10 @@ mod tests {
             let mut found = false;
             for y in 0..buffer.area.height {
                 for x in 0..buffer.area.width {
-                    if let Some(cell) = buffer.cell((x, y)) {
-                        if cell.symbol() == "▸" {
-                            found = true;
-                        }
+                    if let Some(cell) = buffer.cell((x, y))
+                        && cell.symbol() == "▸"
+                    {
+                        found = true;
                     }
                 }
             }
