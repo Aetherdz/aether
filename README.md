@@ -40,6 +40,10 @@ curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/instal
 Installs to `~/.local/bin` (falls back to `/usr/local/bin`). Overrides:
 `AETHER_VERSION` (tag, default `latest`) and `AETHER_INSTALL_DIR`.
 
+Re-running the same command **updates** an existing install: it detects the
+installed version, upgrades when older, warns and keeps the binary when newer,
+and exits early when already up to date (no re-download).
+
 ### Download types
 
 | OS      | x86_64 / amd64           | aarch64 / arm64         |
