@@ -80,10 +80,10 @@ No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 | **Agent loop w/ tools** | Yes — plan→build→route (3 models) | Yes | Yes | Yes | Yes | Partial |
 | **Sandboxed tools** | Yes — path-sandboxed, 30 s timeout | Partial — per-command confirm | Partial | Partial | Partial | Partial |
 | **Diff preview before write** | Yes — built in (y/N gate) | Yes | Yes | Yes | Yes | No |
-| **Undo / checkpoint** | Yes — `.aether-undo` + `aether undo` | No | No | Partial | No | No |
+| **Undo / checkpoint** | Yes — `.aether-undo` + `aether undo` | Partial — git-based | No | Partial | No | No |
 | **Sessions as plain files** | Yes — JSONL | Partial — sqlite | No | No | Partial — sqlite | Yes — JSONL |
 | **Cross-device sync** | Yes — gist/folder line-merge | No | No | No | No | No |
-| **MCP server** | Yes — built in (stdio + HTTP) | No (client only) | Yes — client | Yes — client | Yes | No |
+| **MCP server** | Yes — built in (stdio + HTTP) | No | Yes — client | Yes — client | Yes — client | No |
 | **Telemetry** | No — none, verifiable | Partial — opt-in | Partial | Partial | Partial | No |
 | **Local models (Ollama/LM Studio)** | Yes — first-class providers | Yes | Yes | No | Yes | Partial |
 
@@ -91,6 +91,11 @@ No telemetry, no accounts, no lock-in. Your sessions are files on your disk.
 > (5-run median, 2026-08-09) — same binary, same machine, reproducible.
 > Other tools' figures are **their own published claims**, not measured here:
 > `*` platform-binary size per third-party report; `†` vendor-published time-to-first-frame / boot benchmarks. Startup metrics are **not directly comparable** across tools (we measure `--version` exit; jcode/Claude Code publish first-frame time).
+
+The table is **coverage, not a superiority claim**. [docs/feature-matrix.md](docs/feature-matrix.md)
+tracks every row against source and lists the features Aether does **not**
+have yet (MCP client, git auto-commit, slash commands, watch mode, plugins,
+user-defined subagents) — the same honesty as the benchmarks.
 
 ## Quick start
 
