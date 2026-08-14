@@ -220,7 +220,7 @@ impl Agent {
 
         for iteration in state.iteration + 1..=self.max_iterations {
             self.emit(AgentPhase::BuildStarted { iteration });
-            let build = self.build_round(&task, &plan, &history).await?;
+            let build = self.build_round(iteration, &task, &plan, &history).await?;
             tool_calls += build.tool_calls;
             final_answer = build.summary.clone();
             self.emit(AgentPhase::BuildFinished {
@@ -376,8 +376,11 @@ impl Agent {
     }
 
     /// Role 2: execute plan steps, returning the final summary + tool stats.
+    /// Emits `AgentPhase::ToolCalled` (with the write diff, if any) for
+    /// every tool call so the TUI can show live file changes.
     async fn build_round(
         &self,
+        iteration: u32,
         task: &str,
         plan: &Plan,
         history: &[ChatMessage],
@@ -409,9 +412,14 @@ impl Agent {
 
             if !native.is_empty() {
                 for call in &native {
-                    let (result, modified) = self.execute_tool_call(call).await;
+                    let (result, modified, diff) = self.execute_tool_call(call).await;
                     round_tool_calls += 1;
                     round_modified |= modified;
+                    self.emit(AgentPhase::ToolCalled {
+                        iteration,
+                        name: call.function.name.clone(),
+                        diff,
+                    });
                     messages.push(assistant_tool_calls(vec![call.clone()]));
                     messages.push(tool_result(&call.id, &result));
                 }
@@ -422,12 +430,17 @@ impl Agent {
             let fenced = extract_fenced_calls(&text)?;
             if !fenced.is_empty() {
                 for call in fenced {
-                    let (result, modified) = match self.tools.call(&call.tool, &call.args) {
-                        Ok(r) => (r.text, r.modified),
-                        Err(e) => (e.to_string(), false),
+                    let (result, modified, diff) = match self.tools.call(&call.tool, &call.args) {
+                        Ok(r) => (r.text, r.modified, r.diff),
+                        Err(e) => (e.to_string(), false, None),
                     };
                     round_tool_calls += 1;
                     round_modified |= modified;
+                    self.emit(AgentPhase::ToolCalled {
+                        iteration,
+                        name: call.tool.clone(),
+                        diff,
+                    });
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
                         content: text.clone(),
@@ -457,11 +470,11 @@ impl Agent {
         })
     }
 
-    async fn execute_tool_call(&self, call: &ToolCall) -> (String, bool) {
+    async fn execute_tool_call(&self, call: &ToolCall) -> (String, bool, Option<String>) {
         let args: Value = serde_json::from_str(&call.function.arguments).unwrap_or(Value::Null);
         match self.tools.call(&call.function.name, &args) {
-            Ok(r) => (r.text, r.modified),
-            Err(e) => (e.to_string(), false),
+            Ok(r) => (r.text, r.modified, r.diff),
+            Err(e) => (e.to_string(), false, None),
         }
     }
 
@@ -732,31 +745,39 @@ Done"#;
         assert_eq!(phases[0], AgentPhase::Planning);
         assert!(matches!(&phases[1], AgentPhase::PlanReady(text) if text.contains("goal")));
         assert_eq!(phases[2], AgentPhase::BuildStarted { iteration: 1 });
+        assert_eq!(
+            phases[3],
+            AgentPhase::ToolCalled {
+                iteration: 1,
+                name: "read_file".to_string(),
+                diff: None
+            }
+        );
         assert!(matches!(
-            &phases[3],
+            &phases[4],
             AgentPhase::BuildFinished {
                 iteration: 1,
                 modified: false,
                 ..
             }
         ));
-        assert_eq!(phases[4], AgentPhase::Routing { iteration: 1 });
+        assert_eq!(phases[5], AgentPhase::Routing { iteration: 1 });
         assert_eq!(
-            phases[5],
+            phases[6],
             AgentPhase::Routed {
                 iteration: 1,
                 verdict: VerdictPhase::Done
             }
         );
         assert!(matches!(
-            &phases[6],
+            &phases[7],
             AgentPhase::Finished {
                 iterations: 1,
                 reason: AgentStopReason::Done,
                 ..
             }
         ));
-        assert_eq!(phases.len(), 7);
+        assert_eq!(phases.len(), 8);
         let _ = std::fs::remove_dir_all(&root);
     }
 

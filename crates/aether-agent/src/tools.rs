@@ -732,6 +732,34 @@ mod tests {
     }
 
     #[test]
+    fn write_file_carries_rendered_diff() {
+        let root = temp_root("diffcarry");
+        let tools = Tools::new(root.clone());
+        std::fs::write(root.join("f.txt"), "old line\n").unwrap();
+        let res = tools
+            .call(
+                "write_file",
+                &serde_json::json!({"path": "f.txt", "content": "old line\nnew line\n"}),
+            )
+            .unwrap();
+        assert!(res.ok);
+        assert!(res.modified);
+        let d = res.diff.expect("write_file must carry a diff");
+        assert!(d.contains("+ new line"), "added line missing: {d}");
+        assert!(d.contains("  old line"), "context line missing: {d}");
+        assert!(!d.contains("- old line"), "context shown as removal: {d}");
+        let res = tools
+            .call("read_file", &serde_json::json!({"path": "f.txt"}))
+            .unwrap();
+        assert_eq!(res.diff, None, "read_file must not carry a diff");
+        let res = tools
+            .call("run_command", &serde_json::json!({"cmd": "true"}))
+            .unwrap();
+        assert_eq!(res.diff, None, "run_command must not carry a diff");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn undo_lists_snapshots() {
         let root = temp_root("undolist");
         let tools = Tools::new(root.clone());

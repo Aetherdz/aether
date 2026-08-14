@@ -30,7 +30,13 @@ pub enum AgentPhase {
     /// A build round started.
     BuildStarted { iteration: u32 },
     /// A tool call was executed inside a build round.
-    ToolCalled { iteration: u32, name: String },
+    /// `diff` carries the rendered +/- preview for `write_file` calls
+    /// (a file-changing tool); `None` for every other tool.
+    ToolCalled {
+        iteration: u32,
+        name: String,
+        diff: Option<String>,
+    },
     /// A build round finished, with its summary and stats.
     BuildFinished {
         iteration: u32,
