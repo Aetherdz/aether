@@ -4,14 +4,21 @@
 //! is snapshotted into `<root>/.aether-undo/NNNN.snap` on disk. The journal
 //! survives the agent process, so `aether undo` can restore files later.
 //!
-//! Security: paths are validated with `safe_join_rel` before any read or
-//! write, so a snapshot can never escape the sandbox, and the journal is
-//! never exposed to the model as an arbitrary file-access tool.
+//! Security: the journal operates exclusively through a [`Sandbox`]
+//! capability handle opened on the sandbox root. On Linux that handle
+//! resolves with `openat2(RESOLVE_BENEATH)`, so a snapshot path or a
+//! restore target can never escape the root — symlink tricks and TOCTOU
+//! races are rejected by the kernel at the open itself. `safe_join_rel`
+//! remains as a *lexical pre-check* purely to produce a clear
+//! [`Error::PathTraversal`] message early; it is not the security boundary.
+//! The journal is never exposed to the model as an arbitrary file-access
+//! tool.
 
 use std::path::{Path, PathBuf};
 
 use aether_core::error::{Error, Result};
-use aether_core::fs::{atomic_write, safe_join_rel};
+use aether_core::fs::safe_join_rel;
+use aether_core::sandbox::Sandbox;
 use serde::{Deserialize, Serialize};
 
 /// Directory (relative to the sandbox root) that holds snapshots.
@@ -42,15 +49,23 @@ struct SnapFile {
 }
 
 /// Disk-backed snapshot journal rooted at `<sandbox_root>/.aether-undo`.
+///
+/// All filesystem access goes through a capability [`Sandbox`]; the
+/// `dir` field is kept only for human-readable display.
 #[derive(Debug, Clone)]
 pub struct UndoJournal {
+    sandbox: Sandbox,
     dir: PathBuf,
 }
 
 impl UndoJournal {
+    /// Open the journal for the sandbox rooted at `root` (which must exist).
     pub fn new(root: &Path) -> Self {
+        let sandbox =
+            Sandbox::open(root).expect("undo journal requires an existing, openable sandbox root");
         Self {
             dir: root.join(UNDO_DIR_NAME),
+            sandbox,
         }
     }
 
@@ -63,13 +78,15 @@ impl UndoJournal {
         self.dir.parent().expect("undo dir always has a parent")
     }
 
-    fn snap_path(&self, seq: u32) -> PathBuf {
-        self.dir.join(format!("{seq:04}.snap"))
+    /// Relative path of a snapshot file inside the sandbox.
+    fn snap_rel(&self, seq: u32) -> String {
+        format!("{UNDO_DIR_NAME}/{seq:04}.snap")
     }
 
     /// Save `content` as the newest snapshot for `rel`. Returns the seq.
     pub fn snapshot(&self, rel: &str, content: &str) -> Result<u32> {
-        // Validate the rel path against the sandbox before recording it.
+        // Lexical pre-check for a clear error message; the capability handle
+        // below is the actual boundary.
         safe_join_rel(self.root(), rel)?;
         let seq = self.next_seq()?;
         let snap = SnapFile {
@@ -78,7 +95,7 @@ impl UndoJournal {
             content: content.to_string(),
         };
         let json = serde_json::to_vec(&snap)?;
-        atomic_write(&self.snap_path(seq), &json)?;
+        self.sandbox.atomic_write(&self.snap_rel(seq), &json)?;
         Ok(seq)
     }
 
@@ -99,7 +116,9 @@ impl UndoJournal {
     /// Restore `rel` to its most recent snapshot (and pop that snapshot so
     /// repeated undos walk back through history).
     pub fn restore(&self, rel: &str) -> Result<RestoredSnapshot> {
-        let target = safe_join_rel(self.root(), rel)?;
+        // Lexical pre-check for a clear error message; the capability handle
+        // below is the actual boundary.
+        safe_join_rel(self.root(), rel)?;
         let mut snaps = self.read_all()?;
         snaps.sort_by_key(|s| s.seq);
         let snap = snaps
@@ -107,32 +126,34 @@ impl UndoJournal {
             .rev()
             .find(|s| s.rel == rel)
             .ok_or_else(|| Error::InvalidInput(format!("no snapshot for {rel:?}")))?;
-        atomic_write(&target, snap.content.as_bytes())?;
+        self.sandbox.atomic_write(rel, snap.content.as_bytes())?;
         let restored = RestoredSnapshot {
             seq: snap.seq,
             rel: snap.rel.clone(),
             bytes: snap.content.len(),
         };
-        let _ = std::fs::remove_file(self.snap_path(snap.seq));
+        self.sandbox.remove_file(&self.snap_rel(snap.seq))?;
         Ok(restored)
     }
 
     /// Read and parse every snapshot file currently on disk.
     fn read_all(&self) -> Result<Vec<SnapFile>> {
         let mut snaps = Vec::new();
-        let entries = match std::fs::read_dir(&self.dir) {
+        let entries = match self.sandbox.read_dir(UNDO_DIR_NAME) {
             Ok(e) => e,
-            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(snaps),
-            Err(e) => return Err(e.into()),
+            Err(Error::InvalidInput(ref m))
+                if m.contains("No such file") || m.contains("not found") =>
+            {
+                return Ok(snaps);
+            }
+            Err(e) => return Err(e),
         };
         for entry in entries {
-            let entry = entry?;
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if !name.ends_with(".snap") {
+            if !entry.name.ends_with(".snap") {
                 continue;
             }
-            if let Ok(bytes) = std::fs::read(entry.path())
+            let rel = format!("{UNDO_DIR_NAME}/{}", entry.name);
+            if let Ok(bytes) = self.sandbox.read(&rel)
                 && let Ok(snap) = serde_json::from_slice::<SnapFile>(&bytes)
             {
                 snaps.push(snap);

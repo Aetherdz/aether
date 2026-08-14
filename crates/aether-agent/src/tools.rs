@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use aether_core::error::{Error, Result};
 use aether_core::fs::safe_join_rel;
+use aether_core::sandbox::Sandbox;
 use aether_provider::ToolDef;
 use serde_json::Value;
 
@@ -55,9 +56,17 @@ pub struct ToolResult {
 }
 
 /// Filesystem + command tools bound to a working directory.
+///
+/// Filesystem operations go through a capability [`Sandbox`] handle: on
+/// Linux, cap-std resolves every open with `openat2(RESOLVE_BENEATH)`, so a
+/// path can never escape the working directory — symlink tricks and TOCTOU
+/// races are rejected by the kernel at the open itself. `resolve` remains as
+/// a *lexical* pre-check purely to emit a clear [`Error::PathTraversal`]
+/// message early; it is not the security boundary.
 #[derive(Debug, Clone)]
 pub struct Tools {
     root: PathBuf,
+    sandbox: Sandbox,
     confirm: ConfirmPolicy,
     undo: UndoJournal,
 }
@@ -77,9 +86,12 @@ fn arg_str<'a>(obj: &'a serde_json::Map<String, Value>, name: &str) -> Result<&'
 
 impl Tools {
     pub fn new(root: PathBuf) -> Self {
+        let sandbox = Sandbox::open(&root)
+            .unwrap_or_else(|e| panic!("cannot open sandbox for {}: {e}", root.display()));
         Self {
             confirm: ConfirmPolicy::Disabled,
             undo: UndoJournal::new(&root),
+            sandbox,
             root,
         }
     }
@@ -221,15 +233,15 @@ impl Tools {
     }
 
     fn read_file(&self, rel: &str) -> Result<ToolResult> {
-        let path = self.resolve(rel)?;
-        let meta = std::fs::metadata(&path)?;
+        let _ = self.resolve(rel)?;
+        let meta = self.sandbox.metadata(rel)?;
         if meta.len() > MAX_READ_BYTES {
             return Err(Error::InvalidInput(format!(
                 "file too large ({} bytes, cap {MAX_READ_BYTES})",
                 meta.len()
             )));
         }
-        let bytes = std::fs::read(&path)?;
+        let bytes = self.sandbox.read(rel)?;
         let text = String::from_utf8_lossy(&bytes).into_owned();
         Ok(ToolResult {
             ok: true,
@@ -240,12 +252,12 @@ impl Tools {
     }
 
     fn write_file(&self, rel: &str, content: &str) -> Result<ToolResult> {
-        let path = self.resolve(rel)?;
+        let _ = self.resolve(rel)?;
         self.reject_undo_path(rel)?;
 
         // Existing content (if any) for diff + snapshot purposes.
-        let old = if path.exists() {
-            std::fs::read_to_string(&path).ok()
+        let old = if self.sandbox.exists(rel) {
+            self.sandbox.read_to_string(rel).ok()
         } else {
             None
         };
@@ -264,7 +276,7 @@ impl Tools {
             self.undo.snapshot(rel, old_content)?;
         }
 
-        aether_core::fs::atomic_write(&path, content.as_bytes())?;
+        self.sandbox.atomic_write(rel, content.as_bytes())?;
         Ok(ToolResult {
             ok: true,
             text: format!("wrote {} bytes to {rel}", content.len()),
@@ -360,23 +372,16 @@ impl Tools {
     }
 
     fn list_dir(&self, rel: &str) -> Result<ToolResult> {
-        let path = if rel.is_empty() {
-            self.root.clone()
-        } else {
-            self.resolve(rel)?
-        };
+        if !rel.is_empty() {
+            self.resolve(rel)?;
+        }
         let mut entries: Vec<String> = Vec::new();
-        for entry in std::fs::read_dir(&path)? {
-            let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name == UNDO_DIR_NAME {
+        for entry in self.sandbox.read_dir(rel)? {
+            if entry.name == UNDO_DIR_NAME {
                 continue;
             }
-            let kind = entry
-                .file_type()
-                .map(|t| if t.is_dir() { "dir" } else { "file" })
-                .unwrap_or("?");
-            entries.push(format!("{kind}\t{name}"));
+            let kind = if entry.is_dir { "dir" } else { "file" };
+            entries.push(format!("{kind}\t{}", entry.name));
         }
         entries.sort();
         let text = if entries.is_empty() {
@@ -403,21 +408,21 @@ impl Tools {
     }
 
     fn search(&self, needle: &str, rel: &str) -> Result<ToolResult> {
-        let path = if rel.is_empty() {
-            self.root.clone()
-        } else {
-            self.resolve(rel)?
-        };
+        if !rel.is_empty() {
+            self.resolve(rel)?;
+        }
         let mut matches: Vec<String> = Vec::new();
-        walk(&path, &mut |file| {
+        self.sandbox.walk_files(rel, &mut |file| {
             if matches.len() >= 200 {
                 return Ok(());
             }
-            let text = std::fs::read_to_string(file).unwrap_or_default();
+            if file.starts_with(UNDO_DIR_NAME) || file.contains(&format!("/{UNDO_DIR_NAME}/")) {
+                return Ok(());
+            }
+            let text = self.sandbox.read_to_string(file).unwrap_or_default();
             for (idx, line) in text.lines().enumerate() {
                 if line.contains(needle) {
-                    let rel_path = file.strip_prefix(&self.root).unwrap_or(file).display();
-                    matches.push(format!("{rel_path}:{}:{line}", idx + 1));
+                    matches.push(format!("{file}:{}:{line}", idx + 1));
                     if matches.len() >= 200 {
                         break;
                     }
@@ -437,26 +442,6 @@ impl Tools {
             diff: None,
         })
     }
-}
-
-/// Recursively visit files (not dirs) under `root`.
-fn walk(root: &Path, f: &mut dyn FnMut(&Path) -> Result<()>) -> Result<()> {
-    for entry in std::fs::read_dir(root)? {
-        let entry = entry?;
-        let path = entry.path();
-        let is_dir = entry.file_type()?.is_dir();
-        if is_dir {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name == ".git" || name == "target" || name == "node_modules" || name == UNDO_DIR_NAME
-            {
-                continue;
-            }
-            walk(&path, f)?;
-        } else {
-            f(&path)?;
-        }
-    }
-    Ok(())
 }
 
 /// Build a shell invocation for the current platform.
@@ -908,6 +893,190 @@ mod tests {
             .call("read_file", &serde_json::json!({"path": "f.txt"}))
             .unwrap();
         assert!(res.text.contains("v2"), "expected v2, got: {}", res.text);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ------------------------------------------------------------------
+    // Adversarial sandbox-escape tests.
+    //
+    // Each test *actually attempts* to escape the sandbox root and asserts
+    // the attempt fails. The security boundary is the cap-std capability
+    // handle (openat2 RESOLVE_BENEATH on Linux): the kernel resolves the
+    // full path relative to the handle fd, so escaping symlinks and TOCTOU
+    // swaps are rejected at the open itself, with no validate-then-open
+    // window to race.
+    // ------------------------------------------------------------------
+
+    // 1. Absolute path must never escape the root.
+    #[test]
+    fn escape_absolute_path_blocked() {
+        let root = temp_root("esc-abs");
+        let tools = Tools::new(root.clone());
+        for path in ["/etc/passwd", "/etc", "/"] {
+            let res = tools.call("read_file", &serde_json::json!({"path": path}));
+            assert!(res.is_err(), "absolute path {path:?} must be rejected");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 2. `..` traversal must never escape the root.
+    #[test]
+    fn escape_dotdot_blocked() {
+        let root = temp_root("esc-dotdot");
+        let tools = Tools::new(root.clone());
+        for path in [
+            "..",
+            "../",
+            "../etc/passwd",
+            "a/../../b",
+            "a/../../../etc/passwd",
+        ] {
+            let res = tools.call("read_file", &serde_json::json!({"path": path}));
+            assert!(res.is_err(), "dotdot path {path:?} must be rejected");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 3. External symlink inside the root pointing at `/etc` must not be
+    /// followable out of the sandbox.
+    #[cfg(unix)]
+    #[test]
+    fn escape_external_symlink_blocked() {
+        use std::os::unix::fs::symlink;
+        let root = temp_root("esc-symlink");
+        symlink("/etc", root.join("evil")).unwrap();
+        let tools = Tools::new(root.clone());
+        for path in ["evil/passwd", "evil/hostname", "evil/"] {
+            let res = tools.call("read_file", &serde_json::json!({"path": path}));
+            assert!(res.is_err(), "symlink escape {path:?} must be rejected");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 4. TOCTOU: a directory swapped for a symlink between validation and
+    /// open. The kernel answers for the capability fd, so the swap cannot
+    /// widen access.
+    #[cfg(unix)]
+    #[test]
+    fn escape_toctou_dir_swap_blocked() {
+        use std::os::unix::fs::symlink;
+        let root = temp_root("esc-toctou");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub/file.txt"), "inside").unwrap();
+        let tools = Tools::new(root.clone());
+        assert!(
+            tools
+                .call("read_file", &serde_json::json!({"path": "sub/file.txt"}))
+                .is_ok()
+        );
+        // Attacker swaps `sub` for a symlink to /etc AFTER the handle opened.
+        std::fs::remove_dir_all(root.join("sub")).unwrap();
+        symlink("/etc", root.join("sub")).unwrap();
+        let res = tools.call("read_file", &serde_json::json!({"path": "sub/passwd"}));
+        assert!(res.is_err(), "TOCTOU swap must not escape");
+        let res = tools.call(
+            "write_file",
+            &serde_json::json!({"path": "sub/new.txt", "content": "x"}),
+        );
+        assert!(res.is_err(), "TOCTOU write must not escape");
+        assert!(!std::path::Path::new("/etc/new.txt").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 5. Env-var CWD manipulation (e.g. `PWD=/` or chdir) must not re-root
+    /// the sandbox: the capability handle is independent of process CWD.
+    #[test]
+    fn escape_cwd_env_does_not_reroot() {
+        let root = temp_root("esc-cwd");
+        std::fs::write(root.join("in.txt"), "hello").unwrap();
+        let tools = Tools::new(root.clone());
+        let orig_cwd = std::env::current_dir().unwrap();
+        // Attacker changes the process working directory far away.
+        std::env::set_current_dir("/").unwrap();
+        let res = tools.call("read_file", &serde_json::json!({"path": "in.txt"}));
+        std::env::set_current_dir(&orig_cwd).unwrap();
+        assert!(res.is_ok(), "sandbox must stay rooted even after chdir");
+        // And still no escape.
+        let res = tools.call("read_file", &serde_json::json!({"path": "../etc/passwd"}));
+        assert!(res.is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 6. Unicode homoglyph of `..` (e.g. U+2024) must not be treated as
+    /// traversal, and must not escape.
+    #[test]
+    fn escape_unicode_homoglyph_blocked() {
+        let root = temp_root("esc-unicode");
+        std::fs::write(root.join("safe.txt"), "x").unwrap();
+        let tools = Tools::new(root.clone());
+        for path in [
+            "\u{2024}\u{2024}/etc/passwd",
+            "a\u{2024}b",
+            "\u{FF0E}\u{FF0E}/passwd",
+        ] {
+            let res = tools.call("read_file", &serde_json::json!({"path": path}));
+            // Either a clean miss (no such file) or rejection — never content
+            // from outside the sandbox.
+            if let Ok(r) = res {
+                assert!(!r.text.contains("root:"), "homoglyph leaked /etc/passwd");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 7. NUL byte in a path must be rejected outright.
+    #[test]
+    fn escape_nul_byte_blocked() {
+        let root = temp_root("esc-nul");
+        let tools = Tools::new(root.clone());
+        let res = tools.call("read_file", &serde_json::json!({"path": "a\0b"}));
+        assert!(res.is_err(), "NUL byte path must be rejected");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 8. Backslash as a separator (Windows-style) must not escape on any
+    /// platform.
+    #[test]
+    fn escape_backslash_blocked() {
+        let root = temp_root("esc-bs");
+        let tools = Tools::new(root.clone());
+        for path in [r"..\..\etc\passwd", r"a\..\b", r"C:\Windows\system32"] {
+            let res = tools.call("read_file", &serde_json::json!({"path": path}));
+            assert!(res.is_err(), "backslash path {path:?} must be rejected");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 9. `a/./../b` — embedded `.`/`..` segments after a valid prefix must
+    /// not collapse back out of the root.
+    #[test]
+    fn escape_embedded_dotdot_blocked() {
+        let root = temp_root("esc-embedded");
+        std::fs::create_dir_all(root.join("a")).unwrap();
+        let tools = Tools::new(root.clone());
+        for path in [
+            "a/./../etc/passwd",
+            "a/../a/../../etc/passwd",
+            "./../etc/passwd",
+        ] {
+            let res = tools.call("read_file", &serde_json::json!({"path": path}));
+            assert!(res.is_err(), "embedded dotdot {path:?} must be rejected");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // 10. Symlink loop inside the root must error (ELOOP), not hang or
+    /// escape.
+    #[cfg(unix)]
+    #[test]
+    fn escape_symlink_loop_blocked() {
+        use std::os::unix::fs::symlink;
+        let root = temp_root("esc-loop");
+        symlink("b", root.join("a")).unwrap();
+        symlink("a", root.join("b")).unwrap();
+        let tools = Tools::new(root.clone());
+        let res = tools.call("read_file", &serde_json::json!({"path": "a"}));
+        assert!(res.is_err(), "symlink loop must error, not escape");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

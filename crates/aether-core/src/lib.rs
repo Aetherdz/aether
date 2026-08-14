@@ -7,7 +7,9 @@ pub mod config;
 pub mod error;
 pub mod fs;
 pub mod prompt;
+pub mod sandbox;
 
 pub use config::{AetherConfig, CustomProviderConfig, DEFAULT_MODEL, DEFAULT_PROVIDER, Providers};
 pub use error::{Error, Result, redact_secret};
 pub use prompt::{Prompt, SYSTEM_PROMPT};
+pub use sandbox::Sandbox;
