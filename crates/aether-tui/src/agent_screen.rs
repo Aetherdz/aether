@@ -18,6 +18,9 @@ use aether_agent::{AgentPhase, AgentStopReason, VerdictPhase};
 /// Longest line rendered in a panel before it is truncated with `…`.
 const MAX_LINE: usize = 100;
 
+/// Maximum diff lines rendered under the last tool in the BUILD panel.
+const MAX_DIFF_LINES: usize = 12;
+
 /// How many plan lines are shown in the PLAN panel.
 pub const MAX_PLAN_LINES: usize = 3;
 
@@ -67,6 +70,8 @@ pub struct AgentScreenState {
     pub total_tool_calls: u32,
     /// Name of the most recent tool call.
     pub last_tool_name: Option<String>,
+    /// Rendered +/- diff of the most recent `write_file` call, if any.
+    pub last_diff: Option<String>,
     /// Summary text from the latest build round.
     pub last_summary: String,
     /// Verdict tally across all routed rounds.
@@ -92,10 +97,15 @@ impl AgentScreenState {
                 self.phase = ScreenPhase::BuildStarted;
                 self.current_iteration = iteration;
             }
-            AgentPhase::ToolCalled { iteration, name } => {
+            AgentPhase::ToolCalled {
+                iteration,
+                name,
+                diff,
+            } => {
                 self.phase = ScreenPhase::ToolCalled;
                 self.current_iteration = iteration;
                 self.last_tool_name = Some(name);
+                self.last_diff = diff;
             }
             AgentPhase::BuildFinished {
                 iteration,
@@ -166,6 +176,11 @@ impl AgentScreenState {
             match &self.last_tool_name {
                 Some(name) => lines.push(format!("  last tool: {}", truncate(name, MAX_LINE))),
                 None => lines.push("  last tool: —".to_string()),
+            }
+            if let Some(diff) = &self.last_diff {
+                for line in diff.lines().take(MAX_DIFF_LINES) {
+                    lines.push(format!("    {}", truncate(line, MAX_LINE)));
+                }
             }
         }
 
@@ -300,8 +315,10 @@ mod tests {
         state.apply(AgentPhase::ToolCalled {
             iteration: 1,
             name: "read_file".to_string(),
+            diff: None,
         });
         assert_eq!(state.last_tool_name.as_deref(), Some("read_file"));
+        assert_eq!(state.last_diff, None);
 
         state.apply(AgentPhase::BuildFinished {
             iteration: 1,
@@ -319,6 +336,21 @@ mod tests {
         assert!(lines.iter().any(|l| l == "  tool calls: 3"));
         assert!(lines.iter().any(|l| l == "  last tool: read_file"));
         assert!(!lines.iter().any(|l| l == "  waiting"));
+    }
+
+    #[test]
+    fn write_diff_is_rendered_in_build_panel() {
+        let mut state = AgentScreenState::default();
+        state.apply(AgentPhase::ToolCalled {
+            iteration: 1,
+            name: "write_file".to_string(),
+            diff: Some("  old line\n+ new line\n".to_string()),
+        });
+        let lines = state.status_lines();
+        assert!(lines.iter().any(|l| l == "    + new line"));
+        assert!(lines.iter().any(|l| l == "      old line"));
+        let lines = state.status_lines();
+        assert_eq!(lines.iter().filter(|l| l.starts_with("    ")).count(), 2);
     }
 
     #[test]
