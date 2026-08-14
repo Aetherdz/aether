@@ -220,9 +220,8 @@ impl Session {
 
     /// Delete the session file and its title sidecar.
     pub fn delete(&self) -> Result<bool> {
-        let dir = sessions_dir()?;
-        let file = dir.join(format!("{}.jsonl", self.id.0));
-        let title = dir.join(format!("{}.title", self.id.0));
+        let file = session_file(&self.id)?;
+        let title = title_path(&self.id)?;
         if !file.exists() {
             return Ok(false);
         }
@@ -565,6 +564,18 @@ mod tests {
         // Case-insensitive.
         let hits = Recall::search("DIESEL", 8).unwrap();
         assert_eq!(hits.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_rejects_traversal_id() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let dir = test_env("delete-trav");
+        let evil = SessionId::new("../escape");
+        let err = Session::open(&evil).unwrap_err();
+        assert!(matches!(err, Error::PathTraversal(_)));
+        let s = Session { id: evil };
+        assert!(matches!(s.delete().unwrap_err(), Error::PathTraversal(_)));
         let _ = fs::remove_dir_all(&dir);
     }
 
