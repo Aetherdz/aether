@@ -49,6 +49,9 @@ pub struct ToolResult {
     pub text: String,
     /// True when the call actually modified the filesystem (write/undo).
     pub modified: bool,
+    /// Rendered +/- diff preview when the call changed file contents
+    /// (populated by `write_file` only; `None` for every other tool).
+    pub diff: Option<String>,
 }
 
 /// Filesystem + command tools bound to a working directory.
@@ -232,6 +235,7 @@ impl Tools {
             ok: true,
             text: format!("== {rel} ({} bytes) ==\n{text}", bytes.len()),
             modified: false,
+            diff: None,
         })
     }
 
@@ -265,6 +269,11 @@ impl Tools {
             ok: true,
             text: format!("wrote {} bytes to {rel}", content.len()),
             modified: true,
+            diff: if changes {
+                Some(render_diff(&diff, MAX_DIFF_LINES))
+            } else {
+                None
+            },
         })
     }
 
@@ -307,6 +316,7 @@ impl Tools {
                         restored.seq, restored.bytes
                     ),
                     modified: true,
+                    diff: None,
                 })
             }
             None => {
@@ -316,6 +326,7 @@ impl Tools {
                         ok: true,
                         text: "no snapshots".to_string(),
                         modified: false,
+                        diff: None,
                     });
                 }
                 let text = snaps
@@ -327,6 +338,7 @@ impl Tools {
                     ok: true,
                     text,
                     modified: false,
+                    diff: None,
                 })
             }
         }
@@ -376,6 +388,7 @@ impl Tools {
             ok: true,
             text,
             modified: false,
+            diff: None,
         })
     }
 
@@ -385,6 +398,7 @@ impl Tools {
             ok: true,
             text: render_command_output(cmd, &output),
             modified: false,
+            diff: None,
         })
     }
 
@@ -420,6 +434,7 @@ impl Tools {
             ok: true,
             text,
             modified: false,
+            diff: None,
         })
     }
 }
