@@ -7,6 +7,12 @@ minors may still break surface APIs).
 
 ## [Unreleased]
 
+### Changed
+
+- TUI: quit keys re-engineered to match opencode — ctrl+C toggles a
+  centered quit-confirmation dialog (never quits directly), Esc cancels
+  the dialog or backs out of screens, `q` is the only key that quits.
+
 ## [0.3.0] — 2026-08-15
 
 ### Security

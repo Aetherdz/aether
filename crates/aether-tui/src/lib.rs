@@ -254,6 +254,8 @@ pub struct RatatuiTui {
     agent_cap: u32,
     /// Resolved provider name, shown in the header bar.
     provider: String,
+    /// Quit-confirmation dialog is open (ctrl+C toggles it; Esc cancels).
+    show_quit: bool,
 }
 
 impl Default for RatatuiTui {
@@ -284,6 +286,7 @@ impl Default for RatatuiTui {
             agent_rx: None,
             agent_cap: 0,
             provider: String::new(),
+            show_quit: false,
         }
     }
 }
@@ -589,6 +592,16 @@ impl RatatuiTui {
     }
 
     fn on_key(&mut self, key: KeyEvent) -> KeyAction {
+        // ctrl+C toggles the quit-confirmation dialog on any screen; it
+        // never quits directly (opencode behavior).
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.show_quit = !self.show_quit;
+            return KeyAction::Continue;
+        }
+        // While the quit dialog is open it swallows every other key.
+        if self.show_quit {
+            return self.on_key_quit_dialog(key);
+        }
         // ctrl+P opens/closes the palette on any screen.
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('p') {
             match self.screen {
@@ -618,9 +631,22 @@ impl RatatuiTui {
         }
     }
 
+    /// Keys while the quit-confirmation dialog is open: Esc cancels,
+    /// Enter or 'q' confirms, everything else is ignored.
+    fn on_key_quit_dialog(&mut self, key: KeyEvent) -> KeyAction {
+        match key.code {
+            KeyCode::Esc => {
+                self.show_quit = false;
+                KeyAction::Continue
+            }
+            KeyCode::Enter | KeyCode::Char('q') => KeyAction::Quit,
+            _ => KeyAction::Continue,
+        }
+    }
+
     fn on_key_sessions(&mut self, key: KeyEvent) -> KeyAction {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => KeyAction::Quit,
+            KeyCode::Char('q') => KeyAction::Quit,
             KeyCode::Char('j') | KeyCode::Down => {
                 self.list_scroll =
                     (self.list_scroll + 1).min(self.sessions.len().saturating_sub(1));
@@ -884,6 +910,29 @@ impl RatatuiTui {
             Screen::Palette => self.draw_palette(frame, body),
             Screen::Commands => self.draw_commands(frame, body),
         }
+        // The quit dialog is an overlay drawn on top of the active screen.
+        if self.show_quit {
+            self.draw_quit_dialog(frame, body);
+        }
+    }
+
+    /// Render the centered quit-confirmation overlay (opencode style).
+    fn draw_quit_dialog(&self, frame: &mut Frame, body: Rect) {
+        let w = body.width.min(46);
+        let h = 5.min(body.height.saturating_sub(2));
+        let x = body.x + body.width.saturating_sub(w) / 2;
+        let y = body.y + body.height.saturating_sub(h) / 2;
+        let dialog_rect = Rect::new(x, y, w, h);
+
+        let dialog = Paragraph::new("ctrl+C / Enter / q — quit   ·   Esc — cancel")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border())
+                    .title(" quit aether? "),
+            )
+            .wrap(Wrap { trim: false });
+        frame.render_widget(dialog, dialog_rect);
     }
 
     /// Render the shared header bar + tab strip on the top two rows and
@@ -1435,7 +1484,7 @@ impl RatatuiTui {
             "  agent       Enter run the plan → build → route loop",
             "  sessions    j/k select · Enter open · d delete · r rename",
             "  commands    / or q to close · Enter run · j/k select",
-            "  quit        q on sessions screen",
+            "  quit        ctrl+C confirm · Esc cancel · q quit",
         ]
         .join("\n");
         self.chat.push(ChatRow {
@@ -1855,6 +1904,102 @@ mod tests {
             .unwrap();
         let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(action, KeyAction::Quit);
+    }
+
+    #[test]
+    fn ctrl_c_toggles_quit_dialog_on_sessions() {
+        let mut app = RatatuiTui {
+            screen: Screen::Sessions,
+            ..Default::default()
+        };
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = app.on_key(ctrl_c);
+        assert_eq!(action, KeyAction::Continue);
+        assert!(app.show_quit);
+        let action = app.on_key(ctrl_c);
+        assert_eq!(action, KeyAction::Continue);
+        assert!(!app.show_quit);
+    }
+
+    #[test]
+    fn ctrl_c_never_quits_on_any_screen() {
+        for screen in [Screen::Sessions, Screen::Chat, Screen::Agent] {
+            let mut app = RatatuiTui {
+                screen,
+                ..Default::default()
+            };
+            let action = app.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+            assert_eq!(action, KeyAction::Continue);
+            assert!(app.show_quit);
+        }
+    }
+
+    #[test]
+    fn esc_on_sessions_does_not_quit() {
+        let mut app = RatatuiTui {
+            screen: Screen::Sessions,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Continue);
+        assert!(!app.show_quit);
+    }
+
+    #[test]
+    fn sessions_q_still_quits() {
+        let mut app = RatatuiTui {
+            screen: Screen::Sessions,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Quit);
+    }
+
+    #[test]
+    fn quit_dialog_esc_cancels() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            show_quit: true,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Continue);
+        assert!(!app.show_quit);
+    }
+
+    #[test]
+    fn quit_dialog_enter_confirms() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            show_quit: true,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Quit);
+    }
+
+    #[test]
+    fn quit_dialog_q_confirms() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            show_quit: true,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Quit);
+    }
+
+    #[test]
+    fn quit_dialog_ignores_other_keys() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            show_quit: true,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Continue);
+        assert!(app.show_quit);
+        assert_eq!(app.screen, Screen::Chat);
     }
 
     #[test]
