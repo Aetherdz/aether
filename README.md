@@ -10,10 +10,6 @@
 </p>
 
 <p align="center">
-  <code>one binary</code> · <code>4.99 MB</code> · <code>~112 ms cold start</code> · <code>no telemetry</code>
-</p>
-
-<p align="center">
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/rust-1.97+-black?logo=rust&logoColor=white" alt="Rust 1.97+" /></a>
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
@@ -46,11 +42,15 @@ curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/instal
 ```
 
 Installs to `~/.local/bin` (falls back to `/usr/local/bin`). Overrides:
-`AETHER_VERSION` (tag, default `latest`) and `AETHER_INSTALL_DIR`.
+`AETHER_VERSION` (tag, default `latest`), `AETHER_INSTALL_DIR`, and
+`AETHER_FORCE=1` (force a reinstall/replace even when the same version is
+already installed, or when the installed binary is newer).
 
 Re-running the same command **updates** an existing install: it detects the
 installed version, upgrades when older, warns and keeps the binary when newer,
-and exits early when already up to date (no re-download).
+and exits early when already up to date (no re-download). The script only
+ever replaces the `aether` binary — your config and sessions live in
+`~/.config/aether/` (or `$AETHER_CONFIG_DIR`) and are **never touched**.
 
 ### Download types
 
@@ -107,29 +107,6 @@ The table is **coverage, not a superiority claim**. [docs/feature-matrix.md](doc
 tracks every row against source and lists the features Aether does **not**
 have yet (MCP client, git auto-commit, slash commands, watch mode, plugins,
 user-defined subagents) — the same honesty as the benchmarks.
-
-## Feature grid
-
-<table align="center">
-  <tr>
-    <td align="center"><b>One native binary</b><br/><sub>4.99 MB stripped, no Node, no Python</sub></td>
-    <td align="center"><b>3-model agent loop</b><br/><sub>plan → build → route on one task</sub></td>
-    <td align="center"><b>Sandboxed tools</b><br/><sub>path-sandboxed, 30 s timeout, approval gate</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><b>ratatui TUI</b><br/><sub>live agent panels, plan cards, token ledger</sub></td>
-    <td align="center"><b>MCP server</b><br/><sub>stdio + Streamable HTTP, built in</sub></td>
-    <td align="center"><b>Gist / folder sync</b><br/><sub>line-level merge with origin fingerprints</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><b>JSONL sessions</b><br/><sub>grep it, script it, own it</sub></td>
-    <td align="center"><b>Token ledger</b><br/><sub>know what every session costs</sub></td>
-    <td align="center"><b>Local models</b><br/><sub>Ollama / LM Studio, first-class</sub></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="3"><b>No telemetry.</b> No accounts, no tracking, no lock-in.</td>
-  </tr>
-</table>
 
 ## Quick start
 

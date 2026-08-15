@@ -14,6 +14,12 @@
 # Overrides (env vars):
 #   AETHER_VERSION      release tag to install/update to (default: latest)
 #   AETHER_INSTALL_DIR  install directory (default: ~/.local/bin, falls back to /usr/local/bin)
+#   AETHER_FORCE        set to 1 to force a reinstall even when the installed
+#                       version already matches the target (default: unset)
+#
+# Safety:
+#   This script ONLY replaces the `aether` binary. Your config and sessions
+#   live in ~/.config/aether/ (or $AETHER_CONFIG_DIR) and are NEVER touched.
 set -euo pipefail
 
 REPO="Aetherdz/aether"
@@ -114,14 +120,23 @@ if [ -x "$DEST" ]; then
   if [ -n "$INSTALLED_VER" ]; then
     case "$(ver_cmp "$INSTALLED_VER" "$VERSION")" in
       0)
-        log "aether ${INSTALLED_VER} is already installed and up to date"
-        log "re-run with AETHER_VERSION=<tag> to switch to a specific version"
-        exit 0
+        if [ "${AETHER_FORCE:-}" = "1" ]; then
+          log "aether ${INSTALLED_VER} already installed — forcing reinstall"
+        else
+          log "aether ${INSTALLED_VER} is already installed and up to date"
+          log "re-run with AETHER_VERSION=<tag> to switch to a specific version"
+          log "or AETHER_FORCE=1 to reinstall the same version"
+          exit 0
+        fi
         ;;
       1)
         warn "installed version ${INSTALLED_VER} is newer than target ${VERSION}"
-        warn "keeping the newer binary (set AETHER_VERSION=${INSTALLED_VER} to reinstall it)"
-        exit 0
+        if [ "${AETHER_FORCE:-}" = "1" ]; then
+          warn "AETHER_FORCE=1 — replacing it anyway"
+        else
+          warn "keeping the newer binary (set AETHER_FORCE=1 to replace it)"
+          exit 0
+        fi
         ;;
     esac
     log "updating aether ${INSTALLED_VER} -> ${VERSION}"
@@ -168,3 +183,4 @@ esac
 
 "$DEST" --version
 log "done — try: aether ask \"hello\" (no API key needed)"
+log "config + sessions in ~/.config/aether/ are untouched"
