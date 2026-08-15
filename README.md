@@ -14,7 +14,7 @@
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
   <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-187%20passing-brightgreen" alt="187 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-192%20passing-brightgreen" alt="192 tests passing" /></a>
 </p>
 
 ---

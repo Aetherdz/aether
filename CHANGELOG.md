@@ -28,6 +28,25 @@ minors may still break surface APIs).
 - README: explicit privacy note for the built-in free `zen` provider
   (hosted by opencode.ai at `https://opencode.ai/zen/v1`), clarified
   stability wording, and a rewritten feature checklist.
+- Docs: `docs/zen-privacy.md` — every privacy claim mapped to a source
+  line (no telemetry code paths, `key_env: None` for zen, only
+  `chat/completions` endpoint, `OPENCODE_ZEN_API_KEY` used for paid
+  models only).
+- CI: cargo-audit (advisories) + cargo-deny (licenses/bans/sources) gates;
+  `--workspace --all-targets` on build/test/clippy; README test badge now
+  192 passing.
+- Docs: `docs/feature-matrix.md` — honest coverage matrix vs OpenCode and
+  Aider ("covers what they have", not a superiority claim), with a
+  "Verified against source" table and marked gaps (MCP client, git
+  auto-commit, slash commands, watch mode, plugins, subagents).
+- Benchmark: `crates/aether-agent/tests/maturity_bench.rs` — deterministic
+  (no-LLM) maturity proof: read/search/list, write+undo round-trip,
+  sandbox escape block, and benign command run against 5 real repos
+  (express, requests, ripgrep, jq, bootstrap), skippable in hermetic CI;
+  `benchmark/maturity.sh` clones the repos.
+- Tests: workspace-wide serialization of env-mutating tests via
+  `aether_core::testutil` (single lock shared by session/sync/mcp/tui)
+  — kills a cross-crate race on `AETHER_CONFIG_DIR` that flaked CI.
 
 ### Changed
 
@@ -40,6 +59,19 @@ minors may still break surface APIs).
 - README: comparison tables drop the "default provider" and "install
   method" rows; emoji checkmarks replaced with `Yes`/`No`/`Partial`;
   added an "Interface" row; badge now 165.
+
+### Fixed
+
+- Agent: `write_file` undo for brand-new files — a fresh file now gets a
+  `was_new` snapshot so `undo` deletes it instead of restoring a phantom
+  previous version (caught by the real-repo maturity benchmark).
+- Agent: undo file-missing detection is platform-independent
+  (`sandbox.exists()` instead of Unix-only error-string matching) — the
+  Windows CI failure is gone.
+- Tests: env-mutating tests across crates (session/sync/mcp/tui) now
+  serialize on one shared `aether_core::testutil` lock instead of four
+  per-crate locks, eliminating a `cargo test --workspace` race on
+  `AETHER_CONFIG_DIR`.
 
 ## [0.2.0] — 2026-08-10
 
