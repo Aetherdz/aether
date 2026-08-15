@@ -391,15 +391,11 @@ fn validate_version(bundle: &SessionBundle) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    /// Point AETHER_CONFIG_DIR at a fresh temp dir (serialized: env is global).
+    /// Point AETHER_CONFIG_DIR at a fresh temp dir (serialized across the
+    /// workspace: env is process-global, see aether_core::testutil).
     fn isolate(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("aether-sync-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        unsafe { std::env::set_var("AETHER_CONFIG_DIR", &dir) };
+        let dir = aether_core::testutil::test_env(&format!("sync-{tag}"));
         let sessions = dir.join("sessions");
         let _ = std::fs::create_dir_all(&sessions);
         dir
@@ -483,7 +479,7 @@ mod tests {
 
     #[test]
     fn state_save_load_roundtrip() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         isolate("state");
         let state = SyncState {
             backend: Some("folder".into()),
@@ -514,7 +510,7 @@ mod tests {
 
     #[test]
     fn folder_push_pull_roundtrip() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         let dir = isolate("roundtrip");
         let remote = dir.join("remote");
         let backend = Backend::Folder {
@@ -548,7 +544,7 @@ mod tests {
 
     #[test]
     fn device_id_shape_and_token_file() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         let dir = isolate("device");
         let id = generate_device_id();
         assert!(id.starts_with("device-"), "{id}");

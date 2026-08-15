@@ -167,14 +167,9 @@ pub async fn serve_http(addr: &str) -> Result<(), Box<dyn std::error::Error + Se
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn isolate(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("aether-mcp-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        unsafe { std::env::set_var("AETHER_CONFIG_DIR", &dir) };
+        let dir = aether_core::testutil::test_env(&format!("mcp-{tag}"));
         let sessions = dir.join("sessions");
         let _ = std::fs::create_dir_all(&sessions);
         dir
@@ -190,7 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_sessions_and_show_roundtrip() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         isolate("list");
         let server = AetherServer::new();
         let listed = server.list_sessions().unwrap();
@@ -213,7 +208,7 @@ mod tests {
 
     #[tokio::test]
     async fn recall_finds_seeded_content() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         isolate("recall");
         seed_session();
         let server = AetherServer::new();
@@ -228,7 +223,7 @@ mod tests {
 
     #[tokio::test]
     async fn sync_status_reports_off() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         isolate("status");
         let server = AetherServer::new();
         let status = server.sync_status().unwrap();

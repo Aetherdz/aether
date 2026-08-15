@@ -8,6 +8,7 @@ pub mod error;
 pub mod fs;
 pub mod prompt;
 pub mod sandbox;
+pub mod testutil;
 
 pub use config::{AetherConfig, CustomProviderConfig, DEFAULT_MODEL, DEFAULT_PROVIDER, Providers};
 pub use error::{Error, Result, redact_secret};

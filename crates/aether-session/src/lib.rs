@@ -490,24 +490,17 @@ fn now_iso() -> Result<String> {
 mod tests {
     use super::*;
     use aether_core::config::config_dir;
-    use std::sync::Mutex;
-
-    /// Serialize env-mutating tests (AETHER_CONFIG_DIR is process-global).
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    use std::path::PathBuf;
 
     fn test_env(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("aether-session-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        // SAFETY: tests are serialized by ENV_LOCK, so no other thread reads
-        // AETHER_CONFIG_DIR while it is being mutated.
-        unsafe { std::env::set_var("AETHER_CONFIG_DIR", &dir) };
+        let dir = aether_core::testutil::test_env(&format!("session-{tag}"));
         let _ = fs::create_dir_all(dir.join("sessions"));
         dir
     }
 
     #[test]
     fn create_append_read_roundtrip() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         let dir = test_env("roundtrip");
         let id = Session::create().unwrap();
         let s = Session::open(&id).unwrap();
@@ -529,7 +522,7 @@ mod tests {
 
     #[test]
     fn auto_title_generated_once_and_stable() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         let dir = test_env("title");
         let id = Session::create().unwrap();
         let s = Session::open(&id).unwrap();
@@ -549,7 +542,7 @@ mod tests {
 
     #[test]
     fn recall_finds_keyword_in_one_session_not_another() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         let dir = test_env("recall");
         let a = Session::open(&Session::create().unwrap()).unwrap();
         a.append("user", "we use postgres with an ORM called diesel")
@@ -569,7 +562,7 @@ mod tests {
 
     #[test]
     fn delete_rejects_traversal_id() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         let dir = test_env("delete-trav");
         let evil = SessionId::new("../escape");
         let err = Session::open(&evil).unwrap_err();
@@ -581,7 +574,7 @@ mod tests {
 
     #[test]
     fn ledger_totals_across_sessions() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         let dir = test_env("ledger");
         let a = Session::open(&Session::create().unwrap()).unwrap();
         a.append_usage(SessionMeta {

@@ -1498,16 +1498,12 @@ fn delete_word(input: &mut String) {
 mod tests {
     use super::*;
     use aether_session::SessionId;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// Point `AETHER_CONFIG_DIR` at a scratch dir so session/ledger reads
-    /// never touch the developer's real store (same pattern as aether-mcp).
+    /// never touch the developer's real store (serialized across the
+    /// workspace via aether_core::testutil).
     fn isolate(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("aether-tui-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        unsafe { std::env::set_var("AETHER_CONFIG_DIR", &dir) };
+        let dir = aether_core::testutil::test_env(&format!("tui-{tag}"));
         let sessions = dir.join("sessions");
         let _ = std::fs::create_dir_all(&sessions);
         dir
@@ -1571,7 +1567,7 @@ mod tests {
 
     #[test]
     fn sessions_scroll_clamps() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         isolate("scroll");
         let sid = SessionId::new("2026-08-09T10-00-00-000Z");
         let session = Session::open(&sid).unwrap();
@@ -1738,7 +1734,7 @@ mod tests {
 
     #[test]
     fn wheel_scroll_moves_sessions() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = aether_core::testutil::lock_env();
         isolate("wheel");
         let sid = SessionId::new("2026-08-09T10-00-00-000Z");
         let session = Session::open(&sid).unwrap();
