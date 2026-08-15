@@ -246,6 +246,14 @@ const SPINNER: [char; 8] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '�
 /// every iteration, so the spinner animates while the model is thinking.
 const TICK_MS: u64 = 100;
 
+/// The right usage/session sidebar is only drawn when the body is at least
+/// this wide, so the transcript never drops below ~40 columns.
+const SIDEBAR_MIN_BODY_WIDTH: u16 = 72;
+/// Fixed width of the right usage/session sidebar column. 32 fits the
+/// longest line (`in 1.2K · out 3.4K · total 4.6K`, 31 chars) plus the
+/// left border without truncation.
+const SIDEBAR_WIDTH: u16 = 32;
+
 /// Pick the spinner frame for animation tick `frame` (wraps around).
 fn spinner_frame(frame: u32) -> char {
     SPINNER[(frame as usize) % SPINNER.len()]
@@ -406,6 +414,39 @@ fn diff_line_span(line: &str) -> Span<'static> {
         theme::muted()
     };
     Span::styled(format!("    {line}"), style)
+}
+
+/// Lines for the right usage/session sidebar (opencode-style): live token
+/// counters, the current session, model/provider, and an honest MCP note.
+/// Pure — unit-testable without a terminal. `context_window` of 0 omits the
+/// context percentage (the TUI has no context-window source; `draw_chat`
+/// passes 0).
+fn sidebar_lines(
+    input: u64,
+    output: u64,
+    context_window: u64,
+    session: Option<&aether_session::SessionSummary>,
+    model: &str,
+    provider: &str,
+) -> Vec<String> {
+    let mut lines = vec![chrome::usage_line(input, output, context_window)];
+    match session {
+        Some(s) => {
+            lines.push(s.title.as_deref().unwrap_or("(untitled)").to_string());
+            lines.push(format!("{} turns · {} messages", s.stats.turns, s.messages));
+            lines.push(format!(
+                "in {} · out {}",
+                chrome::format_tokens(s.stats.input_tokens),
+                chrome::format_tokens(s.stats.output_tokens)
+            ));
+        }
+        None => lines.push("no session".to_string()),
+    }
+    lines.push(String::new());
+    lines.push(format!("model: {model}"));
+    lines.push(format!("provider: {provider}"));
+    lines.push("mcp: server crate (external)".to_string());
+    lines
 }
 
 impl RatatuiTui {
@@ -1320,6 +1361,18 @@ impl RatatuiTui {
         ]);
         let [body_area, status_area, input_area, usage_area, footer_area] = vertical.areas(body);
 
+        // Right usage/session sidebar (opencode-style): a fixed-width column
+        // on the right edge of the transcript. Skipped on narrow terminals so
+        // the transcript keeps the full width.
+        let (transcript_area, sidebar_area) = if body_area.width >= SIDEBAR_MIN_BODY_WIDTH {
+            let horizontal =
+                Layout::horizontal([Constraint::Min(0), Constraint::Length(SIDEBAR_WIDTH)]);
+            let [transcript, sidebar] = horizontal.areas(body_area);
+            (transcript, Some(sidebar))
+        } else {
+            (body_area, None)
+        };
+
         // Visible window of rows (oldest at top, scroll up to reveal history).
         let viewport = body_area.height as usize;
         let tail_active = self.stream.is_some();
@@ -1332,7 +1385,7 @@ impl RatatuiTui {
             .iter()
             .skip(start)
             .take(viewport)
-            .flat_map(|r| self.render_message(r, body_area.width))
+            .flat_map(|r| self.render_message(r, transcript_area.width))
             .collect();
         if let Some(stream) = &self.stream {
             let tail = stream.buffer.as_str();
@@ -1351,14 +1404,14 @@ impl RatatuiTui {
                     .title(" transcript "),
             )
             .wrap(Wrap { trim: false });
-        frame.render_widget(transcript, body_area);
+        frame.render_widget(transcript, transcript_area);
 
         if total > viewport {
             let sb_area = Rect::new(
-                body_area.right().saturating_sub(1),
-                body_area.y,
+                transcript_area.right().saturating_sub(1),
+                transcript_area.y,
                 1,
-                body_area.height,
+                transcript_area.height,
             );
             let mut sb_state = ScrollbarState::new(total).position(end.saturating_sub(viewport));
             frame.render_stateful_widget(
@@ -1368,6 +1421,38 @@ impl RatatuiTui {
                 sb_area,
                 &mut sb_state,
             );
+        }
+
+        if let Some(sidebar_area) = sidebar_area {
+            let lines = sidebar_lines(
+                self.input_tokens,
+                self.output_tokens,
+                0, // no context-window source in the TUI — usage_line omits the pct
+                self.selected_session(),
+                &self.model,
+                &self.provider,
+            );
+            let sidebar = Paragraph::new(
+                lines
+                    .iter()
+                    .enumerate()
+                    .map(|(i, l)| {
+                        let style = if i == 1 {
+                            Style::default().fg(Color::White)
+                        } else {
+                            theme::muted()
+                        };
+                        Line::from(Span::styled(l.as_str(), style))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::LEFT)
+                    .border_style(theme::border())
+                    .title(" usage "),
+            );
+            frame.render_widget(sidebar, sidebar_area);
         }
 
         let status = if let Some(err) = &self.last_error {
@@ -3412,5 +3497,156 @@ mod tests {
             "the Agent screen must keep updating via the shared drain"
         );
         assert_eq!(app.agent_state.total_tool_calls, 3);
+    }
+
+    #[test]
+    fn sidebar_lines_formats_tokens_and_session() {
+        let session = aether_session::SessionSummary {
+            id: SessionId::new("s1"),
+            ts: "2026-08-15".into(),
+            size: 0,
+            messages: 3,
+            title: Some("fix auth".into()),
+            stats: aether_session::SessionStats {
+                turns: 2,
+                input_tokens: 1000,
+                output_tokens: 2000,
+            },
+        };
+        let lines = sidebar_lines(1234, 3400, 0, Some(&session), "gpt-4o-mini", "openai");
+        assert_eq!(lines[0], "in 1.2K · out 3.4K · total 4.6K");
+        assert_eq!(lines[1], "fix auth");
+        assert_eq!(lines[2], "2 turns · 3 messages");
+        assert_eq!(lines[3], "in 1K · out 2K");
+        assert!(lines.iter().any(|l| l == "model: gpt-4o-mini"));
+        assert!(lines.iter().any(|l| l == "provider: openai"));
+        assert!(lines.iter().any(|l| l == "mcp: server crate (external)"));
+    }
+
+    #[test]
+    fn sidebar_lines_falls_back_to_untitled_and_no_session() {
+        let session = aether_session::SessionSummary {
+            id: SessionId::new("s2"),
+            ts: "2026-08-15".into(),
+            size: 0,
+            messages: 0,
+            title: None,
+            stats: aether_session::SessionStats::default(),
+        };
+        let lines = sidebar_lines(0, 0, 0, Some(&session), "m", "p");
+        assert_eq!(lines[1], "(untitled)");
+        let lines = sidebar_lines(0, 0, 0, None, "m", "p");
+        assert_eq!(lines[1], "no session");
+        assert!(!lines.iter().any(|l| l.contains("turns")));
+    }
+
+    #[test]
+    fn sidebar_lines_context_percentage_follows_usage_line() {
+        let with_ctx = sidebar_lines(12_000, 34_000, 100_000, None, "m", "p");
+        assert!(with_ctx[0].starts_with("in 12K · out 34K · total 46K"));
+        assert!(with_ctx[0].ends_with("% of ctx"));
+        let without_ctx = sidebar_lines(12_000, 34_000, 0, None, "m", "p");
+        assert_eq!(without_ctx[0], "in 12K · out 34K · total 46K");
+        assert!(!without_ctx[0].contains("% of ctx"));
+    }
+
+    #[test]
+    fn draw_chat_renders_sidebar_with_usage_and_session() {
+        use ratatui::backend::TestBackend;
+
+        let session = aether_session::SessionSummary {
+            id: SessionId::new("s3"),
+            ts: "2026-08-15".into(),
+            size: 0,
+            messages: 5,
+            title: Some("my session".into()),
+            stats: aether_session::SessionStats {
+                turns: 4,
+                input_tokens: 1000,
+                output_tokens: 2000,
+            },
+        };
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            sessions: vec![session],
+            list_state,
+            input_tokens: 1234,
+            output_tokens: 3400,
+            model: "gpt-4o-mini".into(),
+            provider: "openai".into(),
+            ..Default::default()
+        };
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(text.contains("in 1.2K · out 3.4K · total 4.6K"));
+        assert!(text.contains("my session"));
+        assert!(text.contains("4 turns · 5 messages"));
+        assert!(text.contains("model: gpt-4o-mini"));
+        assert!(text.contains("provider: openai"));
+        assert!(text.contains("mcp: server crate (external)"));
+    }
+
+    #[test]
+    fn draw_chat_narrow_terminal_skips_sidebar() {
+        use ratatui::backend::TestBackend;
+
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input_tokens: 1234,
+            output_tokens: 3400,
+            model: "gpt-4o-mini".into(),
+            ..Default::default()
+        };
+        let backend = TestBackend::new(40, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(text.contains("transcript"));
+        assert!(
+            !text.contains("1.2K"),
+            "sidebar must be skipped when the body is too narrow"
+        );
+    }
+
+    #[test]
+    fn draw_chat_sidebar_keeps_scrollbar_on_transcript_column() {
+        use ratatui::backend::TestBackend;
+
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            chat: (0..50)
+                .map(|i| ChatRow {
+                    role: "assistant".into(),
+                    content: format!("line {i}"),
+                })
+                .collect(),
+            chat_scroll: 10,
+            input_tokens: 1234,
+            output_tokens: 3400,
+            ..Default::default()
+        };
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let text = buffer_text(buffer);
+        assert!(
+            text.contains('█'),
+            "scrollbar thumb must render when the chat overflows"
+        );
+        // The sidebar column (rightmost) must never host the scrollbar.
+        for y in 0..buffer.area.height {
+            if let Some(cell) = buffer.cell((99, y)) {
+                assert_ne!(
+                    cell.symbol(),
+                    "█",
+                    "scrollbar must stay on the transcript column, not the sidebar"
+                );
+            }
+        }
     }
 }

@@ -9,6 +9,15 @@ minors may still break surface APIs).
 
 ### Added
 
+- TUI: right usage/session sidebar on the chat screen (opencode-style) — a
+  fixed 32-column panel docked on the right edge of the transcript showing
+  live token counters (`in 1.2K · out 3.4K · total 4.6K`, compact units via
+  `chrome::format_tokens`), the current session (title, turns, messages,
+  session in/out tokens), a divider, `model:` / `provider:`, and a muted
+  `mcp: server crate (external)` note (aether-mcp is a standalone MCP
+  *server* crate — the TUI has no in-app MCP client data). The sidebar is
+  skipped on terminals narrower than 72 columns so the transcript keeps the
+  full width, and the chat scrollbar stays on the transcript column.
 - TUI: live agent-pattern badge in the chat status line — while an agent
   run is active the status area shows `plan -> build -> route` with the
   current stage highlighted (accent) and the other two muted, updating in
