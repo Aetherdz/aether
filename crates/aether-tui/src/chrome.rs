@@ -113,7 +113,42 @@ pub fn render_tabs(tabs: &[(&'static str, bool)], total_width: u16) -> Line<'sta
     Line::from(spans)
 }
 
-/// ASCII art for the aether brand mark: an ascending triangle — the
+/// Format a token count like opencode's status bar: 999 → `999`, 1500 →
+/// `1.5K`, 12000 → `12K` (`.0` dropped), 1_200_000 → `1.2M`. `0` renders as
+/// `0`. Always compact.
+pub fn format_tokens(tokens: u64) -> String {
+    match tokens {
+        0..=999 => format!("{tokens}"),
+        1_000..=999_999 => {
+            let s = format!("{:.1}K", tokens as f64 / 1_000.0);
+            s.replace(".0K", "K")
+        }
+        _ => {
+            let s = format!("{:.1}M", tokens as f64 / 1_000_000.0);
+            s.replace(".0M", "M")
+        }
+    }
+}
+
+/// Format the usage line for the sidebar, opencode-style:
+/// `"in 1.2K · out 3.4K · total 4.6K · 12% of ctx"`. The context-window
+/// percentage is omitted when `context_window` is 0.
+pub fn usage_line(input: u64, output: u64, context_window: u64) -> String {
+    let total = input + output;
+    let base = format!(
+        "in {} · out {} · total {}",
+        format_tokens(input),
+        format_tokens(output),
+        format_tokens(total)
+    );
+    if context_window == 0 {
+        return base;
+    }
+    let pct = total as f64 / context_window as f64 * 100.0;
+    format!("{base} · {pct:.0}% of ctx")
+}
+
+/// Render the aether brand mark: an ascending triangle — the
 /// plan → build → route flow. Each line is a `&str`; callers may join them
 /// vertically for a sidebar or print one line per row.
 pub const LOGO: [&str; 5] = [
@@ -265,5 +300,34 @@ mod tests {
                 .add_modifier
                 .contains(Modifier::BOLD)
         );
+    }
+
+    #[test]
+    fn format_tokens_uses_compact_units() {
+        assert_eq!(format_tokens(0), "0");
+        assert_eq!(format_tokens(999), "999");
+        assert_eq!(format_tokens(1_500), "1.5K");
+        assert_eq!(format_tokens(1_200_000), "1.2M");
+    }
+
+    #[test]
+    fn format_tokens_drops_point_zero_suffix() {
+        assert_eq!(format_tokens(12_000), "12K");
+        assert_eq!(format_tokens(3_400_000), "3.4M");
+    }
+
+    #[test]
+    fn usage_line_omits_percentage_without_context() {
+        assert_eq!(
+            usage_line(1_200, 3_400, 0),
+            "in 1.2K · out 3.4K · total 4.6K"
+        );
+    }
+
+    #[test]
+    fn usage_line_appends_context_percentage() {
+        let line = usage_line(12_000, 34_000, 100_000);
+        assert!(line.starts_with("in 12K · out 34K · total 46K"));
+        assert!(line.ends_with("% of ctx"));
     }
 }
