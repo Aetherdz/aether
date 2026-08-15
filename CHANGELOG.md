@@ -7,6 +7,14 @@ minors may still break surface APIs).
 
 ## [Unreleased]
 
+### Added
+
+- TUI: dynamic terminal tab/window title (OSC 0 via crossterm `SetTitle`) —
+  shows the current page (`aether — sessions` / `aether — chat` /
+  `aether — agent loop`) and switches to `aether — <session> | <model>`
+  (session title truncated to 40 chars) once a session is opened, like
+  opencode/claude-code.
+
 ### Changed
 
 - TUI: error/status indicators render as plain colored text — `✗` replaced

@@ -901,7 +901,19 @@ impl RatatuiTui {
         }
     }
 
+    /// Best-effort terminal tab/window title (OSC 0 via crossterm `SetTitle`),
+    /// mirroring opencode/claude-code: page first, then the active session
+    /// name. Some terminals ignore the escape sequence — errors are swallowed.
+    fn update_title(&self) {
+        let session_title = self.active.as_ref().and_then(|s| s.title().ok());
+        let title = title_for(self.screen, session_title.as_deref(), &self.model);
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(title));
+    }
+
     fn draw(&mut self, frame: &mut Frame) {
+        // Every frame reflects the latest screen + session, so one call here
+        // covers all transitions (Tab cycling, Enter/Esc, slash commands, ...).
+        self.update_title();
         let body = self.draw_chrome(frame, frame.area());
         match self.screen {
             Screen::Sessions => self.draw_sessions(frame, body),
@@ -1508,6 +1520,8 @@ impl Tui for RatatuiTui {
             ratatui::restore();
             return Err(TuiError::Terminal(e.to_string()));
         }
+        // Show the title immediately, before the first frame.
+        self.update_title();
         let result = tokio::runtime::Runtime::new()
             .map_err(|e| TuiError::Terminal(e.to_string()))
             .and_then(|rt| rt.block_on(self.event_loop(&mut terminal)));
@@ -1547,6 +1561,35 @@ fn delete_word(input: &mut String) {
     } else {
         input.clear();
     }
+}
+
+/// Build the terminal tab/window title (opencode pattern: page first, then
+/// the active session). Pure — no I/O — so it is unit-testable without a
+/// terminal. Palette and Commands are chat overlays, so they share the chat
+/// title (session name when one is active, plain `chat` otherwise).
+fn title_for(screen: Screen, session_title: Option<&str>, model: &str) -> String {
+    const MAX_SESSION_TITLE: usize = 40;
+    let session = session_title
+        .map(|t| truncate_title(t, MAX_SESSION_TITLE))
+        .filter(|t| !t.is_empty());
+    match screen {
+        Screen::Sessions => "aether — sessions".to_string(),
+        Screen::Agent => "aether — agent loop".to_string(),
+        Screen::Chat | Screen::Palette | Screen::Commands => match session {
+            Some(title) => format!("aether — {title} | {model}"),
+            None => "aether — chat".to_string(),
+        },
+    }
+}
+
+/// Truncate a session title to at most `max` chars, appending `…` when cut.
+fn truncate_title(title: &str, max: usize) -> String {
+    if title.chars().count() <= max {
+        return title.to_string();
+    }
+    let mut out: String = title.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
 #[cfg(test)]
@@ -2186,5 +2229,80 @@ mod tests {
             .any(|l| l.spans.iter().any(|s| s.content.contains("rust")));
         assert!(has_lang, "code block should show its language label");
         assert_eq!(code_style.bg, Some(theme::CODE_BG));
+    }
+
+    #[test]
+    fn title_for_sessions_screen_shows_page() {
+        let title = title_for(Screen::Sessions, None, "gpt-4o");
+        assert!(title.contains("sessions"));
+        assert!(title.starts_with("aether"));
+    }
+
+    #[test]
+    fn title_for_chat_with_session_shows_session_and_model() {
+        let title = title_for(Screen::Chat, Some("Fix the auth bug"), "gpt-4o");
+        assert!(title.contains("Fix the auth bug"));
+        assert!(title.contains("gpt-4o"));
+        assert!(title.contains("aether"));
+    }
+
+    #[test]
+    fn title_for_long_session_title_is_truncated() {
+        let long = "this session title is way longer than forty characters for sure";
+        assert!(long.chars().count() > 40);
+        let title = title_for(Screen::Chat, Some(long), "gpt-4o");
+        let session = title
+            .split(" | ")
+            .next()
+            .unwrap()
+            .strip_prefix("aether — ")
+            .unwrap();
+        assert!(session.chars().count() <= 40);
+        assert!(session.ends_with('…'));
+    }
+
+    #[test]
+    fn title_for_agent_screen_shows_agent_loop() {
+        let title = title_for(Screen::Agent, Some("Fix the auth bug"), "gpt-4o");
+        assert!(title.contains("agent"));
+    }
+
+    #[test]
+    fn title_for_chat_without_session_shows_chat() {
+        let title = title_for(Screen::Chat, None, "gpt-4o");
+        assert_eq!(title, "aether — chat");
+    }
+
+    #[test]
+    fn title_for_palette_and_commands_follow_chat() {
+        for screen in [Screen::Palette, Screen::Commands] {
+            let with_session = title_for(screen, Some("Fix the auth bug"), "gpt-4o");
+            assert!(with_session.contains("Fix the auth bug"));
+            let without = title_for(screen, None, "gpt-4o");
+            assert_eq!(without, "aether — chat");
+        }
+    }
+
+    #[test]
+    fn title_for_truncation_boundary_keeps_short_titles() {
+        let exact = "x".repeat(40);
+        let title = title_for(Screen::Chat, Some(&exact), "gpt-4o");
+        assert!(title.contains(&exact));
+        let one_over = "x".repeat(41);
+        let title = title_for(Screen::Chat, Some(&one_over), "gpt-4o");
+        let session = title
+            .split(" | ")
+            .next()
+            .unwrap()
+            .strip_prefix("aether — ")
+            .unwrap();
+        assert_eq!(session.chars().count(), 40);
+        assert!(session.ends_with('…'));
+    }
+
+    #[test]
+    fn update_title_is_best_effort_and_never_panics() {
+        let app = RatatuiTui::default();
+        app.update_title(); // writes OSC to captured test stdout; must not panic
     }
 }
