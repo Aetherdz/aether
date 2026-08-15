@@ -33,9 +33,9 @@ use ratatui::{
 
 use aether_agent::ChannelObserver;
 use aether_agent::observer::DynObserver;
-use aether_core::config::load_config;
+use aether_core::config::{AetherConfig, CustomProviderConfig, load_config, save_config};
 use aether_provider::{
-    ChatMessage, ChatRequest, OpenAICompatibleClient, Provider, resolve_default,
+    ChatMessage, ChatRequest, OpenAICompatibleClient, Provider, list_providers, resolve_default,
 };
 use aether_session::{Ledger, Session, list_sessions};
 use thiserror::Error;
@@ -128,6 +128,8 @@ enum Screen {
     Palette,
     /// Slash-command picker (opened by typing `/` in the chat input).
     Commands,
+    /// Sequential input flow for adding a custom model (from the palette).
+    AddModel,
 }
 
 /// A slash command entry shown by the `/` picker.
@@ -159,6 +161,35 @@ impl SlashCmd {
             SlashCmd::Clear => "/clear    clear the transcript",
             SlashCmd::Help => "/help     show this reference",
             SlashCmd::Exit => "/exit     quit aether",
+        }
+    }
+}
+
+/// Which field the add-model flow is currently editing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AddModelField {
+    BaseUrl,
+    ApiKeyEnv,
+    ModelName,
+}
+
+/// Sequential input state for the "add custom model" flow: one field at a
+/// time, Esc cancels at any step, Enter advances (validated on commit).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AddModelState {
+    field: AddModelField,
+    base_url: String,
+    api_key_env: String,
+    model_name: String,
+}
+
+impl AddModelState {
+    /// The string being edited for the current field.
+    fn current(&mut self) -> &mut String {
+        match self.field {
+            AddModelField::BaseUrl => &mut self.base_url,
+            AddModelField::ApiKeyEnv => &mut self.api_key_env,
+            AddModelField::ModelName => &mut self.model_name,
         }
     }
 }
@@ -287,6 +318,8 @@ pub struct RatatuiTui {
     provider: String,
     /// Quit-confirmation dialog is open (ctrl+C toggles it; Esc cancels).
     show_quit: bool,
+    /// In-flight add-model flow (None when not active).
+    add_model: Option<AddModelState>,
 }
 
 impl Default for RatatuiTui {
@@ -318,6 +351,7 @@ impl Default for RatatuiTui {
             agent_cap: 0,
             provider: String::new(),
             show_quit: false,
+            add_model: None,
         }
     }
 }
@@ -432,16 +466,27 @@ impl RatatuiTui {
         self.refresh_sessions()
     }
 
-    /// Open the ctrl+P palette with the default provider's models.
+    /// Open the ctrl+P palette with the default provider's static models
+    /// plus every custom model from the config, and reset any in-flight
+    /// add-model flow. The cursor starts on the currently active model.
     fn open_palette(&mut self) {
         let config = load_config().unwrap_or_default();
         let resolved = resolve_default(&config, None, None);
-        self.palette_models = resolved.provider.static_models.clone();
+        let mut models = resolved.provider.static_models.clone();
+        for custom in &config.providers.custom {
+            for m in &custom.models {
+                if !models.contains(m) {
+                    models.push(m.clone());
+                }
+            }
+        }
+        self.palette_models = models;
         self.palette_index = self
             .palette_models
             .iter()
-            .position(|m| m == &resolved.model)
+            .position(|m| m == &self.model)
             .unwrap_or(0);
+        self.add_model = None;
         self.screen = Screen::Palette;
     }
 
@@ -452,6 +497,26 @@ impl RatatuiTui {
     /// The base URL + optional key for the currently configured provider.
     fn client() -> Result<OpenAICompatibleClient, TuiError> {
         let config = load_config().map_err(|e| TuiError::Session(e.to_string()))?;
+        let resolved = resolve_default(&config, None, None);
+        resolved
+            .provider
+            .client()
+            .map_err(|e| TuiError::Provider(e.to_string()))
+    }
+
+    /// Build a client for the provider that serves `model` — custom
+    /// providers from the config included — falling back to the default
+    /// provider when no provider lists the model. This is what makes a
+    /// palette pick of a custom model actually talk to the custom endpoint.
+    fn client_for_model(model: &str) -> Result<OpenAICompatibleClient, TuiError> {
+        let config = load_config().map_err(|e| TuiError::Session(e.to_string()))?;
+        for provider in list_providers(&config) {
+            if provider.static_models.iter().any(|m| m == model) {
+                return provider
+                    .client()
+                    .map_err(|e| TuiError::Provider(e.to_string()));
+            }
+        }
         let resolved = resolve_default(&config, None, None);
         resolved
             .provider
@@ -493,7 +558,7 @@ impl RatatuiTui {
             ..ChatMessage::default()
         });
 
-        let client = Self::client()?;
+        let client = Self::client_for_model(model)?;
         let (tx, rx) = std::sync::mpsc::channel();
         self.stream = Some(ChatStream {
             rx,
@@ -673,6 +738,7 @@ impl RatatuiTui {
             Screen::Agent => self.on_key_agent(key),
             Screen::Palette => self.on_key_palette(key),
             Screen::Commands => self.on_key_commands(key),
+            Screen::AddModel => self.on_key_add_model(key),
         }
     }
 
@@ -860,21 +926,33 @@ impl RatatuiTui {
     }
 
     fn on_key_palette(&mut self, key: KeyEvent) -> KeyAction {
+        // The list is the models plus one trailing "add custom model" entry.
+        let total = self.palette_models.len() + 1;
         match key.code {
             KeyCode::Esc => {
                 self.close_palette();
                 KeyAction::Continue
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                self.palette_index =
-                    (self.palette_index + 1).min(self.palette_models.len().saturating_sub(1));
+                self.palette_index = (self.palette_index + 1) % total;
                 KeyAction::Continue
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.palette_index = self.palette_index.saturating_sub(1);
+                self.palette_index = (self.palette_index + total - 1) % total;
                 KeyAction::Continue
             }
             KeyCode::Enter => {
+                if self.palette_index == self.palette_models.len() {
+                    // "add custom model" entry: start the sequential input flow.
+                    self.add_model = Some(AddModelState {
+                        field: AddModelField::BaseUrl,
+                        base_url: String::new(),
+                        api_key_env: String::new(),
+                        model_name: String::new(),
+                    });
+                    self.screen = Screen::AddModel;
+                    return KeyAction::Continue;
+                }
                 let model = self
                     .palette_models
                     .get(self.palette_index)
@@ -896,6 +974,103 @@ impl RatatuiTui {
                 }
             }
             _ => KeyAction::Continue,
+        }
+    }
+
+    /// Keys while the add-model flow is active: typing appends to the
+    /// current field, Enter advances (validated), Esc cancels back to the
+    /// palette without persisting anything.
+    fn on_key_add_model(&mut self, key: KeyEvent) -> KeyAction {
+        match key.code {
+            KeyCode::Esc => {
+                self.add_model = None;
+                self.screen = Screen::Palette;
+                KeyAction::Continue
+            }
+            KeyCode::Enter => self.advance_add_model(),
+            KeyCode::Backspace | KeyCode::Char('\u{7f}') | KeyCode::Char('\u{08}') => {
+                if let Some(state) = &mut self.add_model {
+                    state.current().pop();
+                }
+                KeyAction::Continue
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(state) = &mut self.add_model {
+                    state.current().push(c);
+                }
+                KeyAction::Continue
+            }
+            _ => KeyAction::Continue,
+        }
+    }
+
+    /// Advance the add-model flow one field; on the last field, validate and
+    /// persist the new custom provider, then return to the palette with the
+    /// new model listed. Empty base URL / model name are refused (the flow
+    /// stays on the offending field).
+    fn advance_add_model(&mut self) -> KeyAction {
+        let Some(state) = &mut self.add_model else {
+            return KeyAction::Continue;
+        };
+        match state.field {
+            AddModelField::BaseUrl => {
+                if state.base_url.trim().is_empty() {
+                    return KeyAction::Continue;
+                }
+                state.field = AddModelField::ApiKeyEnv;
+            }
+            AddModelField::ApiKeyEnv => {
+                state.field = AddModelField::ModelName;
+            }
+            AddModelField::ModelName => {
+                if state.model_name.trim().is_empty() {
+                    return KeyAction::Continue;
+                }
+                let base_url = state.base_url.trim().to_string();
+                let model_name = state.model_name.trim().to_string();
+                let api_key_env = state.api_key_env.trim();
+                let api_key_env = (!api_key_env.is_empty()).then(|| api_key_env.to_string());
+                self.commit_custom_provider(base_url, api_key_env, model_name);
+            }
+        }
+        KeyAction::Continue
+    }
+
+    /// Persist a custom provider (base URL + optional key env + model name)
+    /// to the config: appends a new provider or extends an existing one
+    /// with the same derived name, then reopens the palette with the new
+    /// model listed and the cursor on it.
+    fn commit_custom_provider(
+        &mut self,
+        base_url: String,
+        api_key_env: Option<String>,
+        model_name: String,
+    ) {
+        let name = provider_name_from_base_url(&base_url);
+        let mut config = load_config().unwrap_or_default();
+        match config.providers.custom.iter_mut().find(|p| p.name == name) {
+            Some(existing) => {
+                existing.base_url = base_url;
+                if api_key_env.is_some() {
+                    existing.api_key_env = api_key_env;
+                }
+                if !existing.models.contains(&model_name) {
+                    existing.models.push(model_name.clone());
+                }
+            }
+            None => config.providers.custom.push(CustomProviderConfig {
+                name,
+                base_url,
+                api_key_env,
+                models: vec![model_name.clone()],
+                default_model: None,
+            }),
+        }
+        persist_config(&config);
+        self.add_model = None;
+        self.open_palette();
+        if let Some(pos) = self.palette_models.iter().position(|m| m == &model_name) {
+            self.palette_index = pos;
         }
     }
 
@@ -967,6 +1142,7 @@ impl RatatuiTui {
             Screen::Agent => self.draw_agent(frame, body),
             Screen::Palette => self.draw_palette(frame, body),
             Screen::Commands => self.draw_commands(frame, body),
+            Screen::AddModel => self.draw_add_model(frame, body),
         }
         // The quit dialog is an overlay drawn on top of the active screen.
         if self.show_quit {
@@ -1012,6 +1188,7 @@ impl RatatuiTui {
                     Screen::Agent => "agent",
                     Screen::Palette => "chat",
                     Screen::Commands => "commands",
+                    Screen::AddModel => "chat",
                 },
                 model: &self.model,
                 provider: &self.provider,
@@ -1022,7 +1199,10 @@ impl RatatuiTui {
         );
         frame.render_widget(Paragraph::new(header), header_area);
 
-        let selected = matches!(self.screen, Screen::Chat | Screen::Palette);
+        let selected = matches!(
+            self.screen,
+            Screen::Chat | Screen::Palette | Screen::AddModel
+        );
         let tabs = chrome::render_tabs(
             &[
                 ("chat", selected),
@@ -1469,21 +1649,31 @@ impl RatatuiTui {
 
     fn draw_palette(&mut self, frame: &mut Frame, body: Rect) {
         let w = body.width.min(40);
-        let h = (self.palette_models.len() as u16 + 2).min(body.height.saturating_sub(2));
+        let h = (self.palette_models.len() as u16 + 3).min(body.height.saturating_sub(2));
         let x = body.x + body.width.saturating_sub(w) / 2;
         let y = body.y + body.height.saturating_sub(h) / 2;
         let palette_rect = Rect::new(x, y, w, h);
 
-        let items: Vec<ListItem> = self
+        let mut items: Vec<ListItem> = self
             .palette_models
             .iter()
             .map(|m| {
-                ListItem::new(Line::from(Span::styled(
-                    m,
-                    Style::default().fg(Color::White),
-                )))
+                let line = if m == &self.model {
+                    Line::from(vec![
+                        Span::styled(m, Style::default().fg(Color::White)),
+                        Span::styled("  (active)", theme::accent()),
+                    ])
+                } else {
+                    Line::from(Span::styled(m, Style::default().fg(Color::White)))
+                };
+                ListItem::new(line)
             })
             .collect();
+        items.push(ListItem::new(Line::from(Span::styled(
+            "+ add custom model",
+            theme::accent(),
+        ))));
+        let select = self.palette_index.min(items.len().saturating_sub(1));
         let list = List::new(items)
             .block(
                 Block::default()
@@ -1493,8 +1683,49 @@ impl RatatuiTui {
             )
             .highlight_style(theme::highlight())
             .highlight_symbol("▸ ");
-        self.palette_state.select(Some(self.palette_index));
+        self.palette_state.select(Some(select));
         frame.render_stateful_widget(list, palette_rect, &mut self.palette_state);
+    }
+
+    /// Render the add-model dialog: the current field prompt, the value
+    /// typed so far, and a hint line (Enter advances, Esc cancels).
+    fn draw_add_model(&self, frame: &mut Frame, body: Rect) {
+        let w = body.width.min(60);
+        let h = 7.min(body.height.saturating_sub(2));
+        let x = body.x + body.width.saturating_sub(w) / 2;
+        let y = body.y + body.height.saturating_sub(h) / 2;
+        let rect = Rect::new(x, y, w, h);
+
+        let (prompt, value) = match &self.add_model {
+            Some(state) => match state.field {
+                AddModelField::BaseUrl => ("provider base URL", state.base_url.as_str()),
+                AddModelField::ApiKeyEnv => (
+                    "API key env var name (Enter for none)",
+                    state.api_key_env.as_str(),
+                ),
+                AddModelField::ModelName => ("model name", state.model_name.as_str()),
+            },
+            None => ("", ""),
+        };
+        let lines = vec![
+            Line::from(Span::styled("add custom model", theme::title())),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(format!("{prompt}: "), theme::accent()),
+                Span::raw(value),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled("Enter: next · Esc: cancel", theme::muted())),
+        ];
+        let dialog = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border())
+                    .title(" /model — add custom "),
+            )
+            .wrap(Wrap { trim: false });
+        frame.render_widget(dialog, rect);
     }
 
     fn draw_commands(&mut self, frame: &mut Frame, body: Rect) {
@@ -1588,6 +1819,45 @@ impl RatatuiTui {
     }
 }
 
+/// Persist the config so custom providers survive the next load.
+///
+/// `aether_core::config::save_config` serializes `base_url` as `baseUrl`,
+/// but `load_config`'s legacy normalizer only accepts the TS shape
+/// `baseURL`, so a Rust-written config would silently drop every custom
+/// provider on the next read. Patch the key back to `baseURL` after saving
+/// (a no-op when the key is already `baseURL`). Best-effort: a failed save
+/// or patch leaves the previous config untouched.
+fn persist_config(config: &AetherConfig) {
+    let _ = save_config(config);
+    let Ok(path) = aether_core::config::config_path() else {
+        return;
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let patched = raw.replace("\"baseUrl\":", "\"baseURL\":");
+    if patched != raw {
+        let _ = aether_core::fs::atomic_write(&path, patched.as_bytes());
+    }
+}
+
+/// Derive a provider name from a base URL host (with port), so adding a
+/// second model to the same endpoint extends the existing provider instead
+/// of duplicating it. Falls back to `custom` when no host is present.
+fn provider_name_from_base_url(base_url: &str) -> String {
+    let trimmed = base_url.trim();
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    let host = without_scheme.split('/').next().unwrap_or("custom").trim();
+    if host.is_empty() {
+        "custom".to_string()
+    } else {
+        host.to_string()
+    }
+}
+
 /// Delete the whitespace-delimited word left of the cursor (ctrl+W).
 fn delete_word(input: &mut String) {
     let trimmed_end = input.trim_end().len();
@@ -1611,7 +1881,7 @@ fn title_for(screen: Screen, session_title: Option<&str>, model: &str) -> String
     match screen {
         Screen::Sessions => "aether — sessions".to_string(),
         Screen::Agent => "aether — agent loop".to_string(),
-        Screen::Chat | Screen::Palette | Screen::Commands => match session {
+        Screen::Chat | Screen::Palette | Screen::Commands | Screen::AddModel => match session {
             Some(title) => format!("aether — {title} | {model}"),
             None => "aether — chat".to_string(),
         },
@@ -1641,6 +1911,14 @@ mod tests {
         let sessions = dir.join("sessions");
         let _ = std::fs::create_dir_all(&sessions);
         dir
+    }
+
+    /// Feed one plain character at a time through `on_key` (used to type
+    /// into the add-model flow fields).
+    fn type_text(app: &mut RatatuiTui, text: &str) {
+        for c in text.chars() {
+            let _ = app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        }
     }
 
     #[test]
@@ -2526,5 +2804,379 @@ mod tests {
             spinner_frame(first + 1),
             "consecutive ticks must show different spinner frames"
         );
+    }
+    #[test]
+    fn palette_renders_custom_models_from_config() {
+        use ratatui::backend::TestBackend;
+
+        let _g = aether_core::testutil::lock_env();
+        let dir = isolate("palette-custom");
+        let mut config = aether_core::config::AetherConfig::default();
+        config.default_provider = "myllm".to_string();
+        config.providers.custom.push(CustomProviderConfig {
+            name: "myllm".into(),
+            base_url: "http://localhost:1234/v1".into(),
+            api_key_env: Some("MYLLM_KEY".into()),
+            models: vec!["my-custom-model".into()],
+            default_model: None,
+        });
+        config.providers.custom.push(CustomProviderConfig {
+            name: "other".into(),
+            base_url: "https://other.example/v1".into(),
+            api_key_env: None,
+            models: vec!["other-model".into()],
+            default_model: None,
+        });
+        persist_config(&config);
+
+        let mut app = RatatuiTui::default();
+        app.open_palette();
+        assert!(
+            app.palette_models.iter().any(|m| m == "my-custom-model"),
+            "palette state must include custom models from the config"
+        );
+        assert!(app.palette_models.iter().any(|m| m == "other-model"));
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut text = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                if let Some(cell) = buffer.cell((x, y)) {
+                    text.push_str(cell.symbol());
+                }
+            }
+        }
+        assert!(
+            text.contains("my-custom-model"),
+            "rendered palette must show the custom model, got: {text:?}"
+        );
+        assert!(
+            text.contains("+ add custom model"),
+            "rendered palette must show the add-model entry, got: {text:?}"
+        );
+    }
+
+    #[test]
+    fn open_palette_includes_static_and_custom_models() {
+        let _g = aether_core::testutil::lock_env();
+        isolate("palette-mix");
+        let mut config = aether_core::config::AetherConfig::default();
+        config.providers.custom.push(CustomProviderConfig {
+            name: "myllm".into(),
+            base_url: "http://localhost:1234/v1".into(),
+            api_key_env: None,
+            models: vec!["custom-x".into()],
+            default_model: None,
+        });
+        persist_config(&config);
+
+        let mut app = RatatuiTui::default();
+        app.open_palette();
+        assert!(
+            app.palette_models
+                .iter()
+                .any(|m| m == "deepseek-v4-flash-free"),
+            "static models of the default provider must stay listed"
+        );
+        assert_eq!(
+            app.palette_models.last().map(String::as_str),
+            Some("custom-x")
+        );
+        let unique: std::collections::HashSet<&String> = app.palette_models.iter().collect();
+        assert_eq!(
+            unique.len(),
+            app.palette_models.len(),
+            "no duplicate models"
+        );
+    }
+
+    #[test]
+    fn palette_selection_wraps_around() {
+        let mut app = RatatuiTui {
+            screen: Screen::Palette,
+            palette_models: vec!["m1".into(), "m2".into()],
+            palette_index: 0,
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.palette_index, 1);
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.palette_index, 2); // the trailing add-model entry
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.palette_index, 0); // wraps to the top
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.palette_index, 2); // wraps to the bottom
+        let _ = app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.palette_index, 0);
+        let _ = app.on_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(app.palette_index, 2);
+    }
+
+    #[test]
+    fn palette_enter_on_add_entry_opens_add_flow_and_esc_cancels() {
+        let mut app = RatatuiTui {
+            screen: Screen::Palette,
+            palette_models: vec!["m1".into()],
+            palette_index: 1, // the trailing add-model entry
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Continue);
+        assert_eq!(app.screen, Screen::AddModel);
+        assert_eq!(
+            app.add_model.as_ref().map(|s| s.field),
+            Some(AddModelField::BaseUrl)
+        );
+
+        let action = app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(action, KeyAction::Continue);
+        assert_eq!(app.screen, Screen::Palette);
+        assert!(app.add_model.is_none(), "Esc must cancel the add flow");
+    }
+
+    #[test]
+    fn add_model_flow_persists_config_and_appears_in_list() {
+        let _g = aether_core::testutil::lock_env();
+        let dir = isolate("add-model");
+        let mut app = RatatuiTui {
+            screen: Screen::AddModel,
+            add_model: Some(AddModelState {
+                field: AddModelField::BaseUrl,
+                base_url: String::new(),
+                api_key_env: String::new(),
+                model_name: String::new(),
+            }),
+            ..Default::default()
+        };
+        type_text(&mut app, "http://localhost:9999/v1");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            app.add_model.as_ref().map(|s| s.field),
+            Some(AddModelField::ApiKeyEnv)
+        );
+        type_text(&mut app, "MY_KEY");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            app.add_model.as_ref().map(|s| s.field),
+            Some(AddModelField::ModelName)
+        );
+        type_text(&mut app, "my-model");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(app.screen, Screen::Palette);
+        assert!(app.add_model.is_none());
+        let pos = app
+            .palette_models
+            .iter()
+            .position(|m| m == "my-model")
+            .expect("the new model must appear in the palette list");
+        assert_eq!(app.palette_index, pos, "cursor must land on the new model");
+
+        let reloaded = aether_core::config::load_config_from(&dir).unwrap();
+        let custom = reloaded
+            .providers
+            .custom
+            .iter()
+            .find(|p| p.name == "localhost:9999")
+            .expect("config.json must contain the new custom provider");
+        assert_eq!(custom.base_url, "http://localhost:9999/v1");
+        assert_eq!(custom.api_key_env.as_deref(), Some("MY_KEY"));
+        assert_eq!(custom.models, vec!["my-model".to_string()]);
+    }
+
+    #[test]
+    fn add_model_flow_empty_key_env_stores_none() {
+        let _g = aether_core::testutil::lock_env();
+        let dir = isolate("add-model-nokey");
+        let mut app = RatatuiTui {
+            screen: Screen::AddModel,
+            add_model: Some(AddModelState {
+                field: AddModelField::BaseUrl,
+                base_url: String::new(),
+                api_key_env: String::new(),
+                model_name: String::new(),
+            }),
+            ..Default::default()
+        };
+        type_text(&mut app, "http://localhost:9999/v1");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)); // skip the key env
+        type_text(&mut app, "m");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        let reloaded = aether_core::config::load_config_from(&dir).unwrap();
+        let custom = reloaded
+            .providers
+            .custom
+            .iter()
+            .find(|p| p.name == "localhost:9999")
+            .expect("config.json must contain the new custom provider");
+        assert_eq!(
+            custom.api_key_env, None,
+            "an empty key env must be stored as None (no key sent)"
+        );
+    }
+
+    #[test]
+    fn add_model_flow_merges_into_existing_provider() {
+        let _g = aether_core::testutil::lock_env();
+        let dir = isolate("add-model-merge");
+        let mut config = aether_core::config::AetherConfig::default();
+        config.providers.custom.push(CustomProviderConfig {
+            name: "localhost:9999".into(),
+            base_url: "http://localhost:9999/v1".into(),
+            api_key_env: Some("OLD_KEY".into()),
+            models: vec!["existing-model".into()],
+            default_model: None,
+        });
+        persist_config(&config);
+
+        let mut app = RatatuiTui {
+            screen: Screen::AddModel,
+            add_model: Some(AddModelState {
+                field: AddModelField::BaseUrl,
+                base_url: String::new(),
+                api_key_env: String::new(),
+                model_name: String::new(),
+            }),
+            ..Default::default()
+        };
+        type_text(&mut app, "http://localhost:9999/v1");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        type_text(&mut app, "NEW_KEY");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        type_text(&mut app, "new-model");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        let reloaded = aether_core::config::load_config_from(&dir).unwrap();
+        assert_eq!(
+            reloaded.providers.custom.len(),
+            1,
+            "same endpoint must merge, not duplicate"
+        );
+        let custom = &reloaded.providers.custom[0];
+        assert_eq!(
+            custom.models,
+            vec!["existing-model".to_string(), "new-model".to_string()]
+        );
+        assert_eq!(custom.api_key_env.as_deref(), Some("NEW_KEY"));
+    }
+
+    #[test]
+    fn add_model_flow_refuses_empty_base_url() {
+        let mut app = RatatuiTui {
+            screen: Screen::AddModel,
+            add_model: Some(AddModelState {
+                field: AddModelField::BaseUrl,
+                base_url: String::new(),
+                api_key_env: String::new(),
+                model_name: String::new(),
+            }),
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            app.add_model.as_ref().map(|s| s.field),
+            Some(AddModelField::BaseUrl),
+            "empty base URL must be refused"
+        );
+        assert_eq!(app.screen, Screen::AddModel);
+    }
+
+    #[test]
+    fn add_model_flow_refuses_empty_model_name() {
+        let mut app = RatatuiTui {
+            screen: Screen::AddModel,
+            add_model: Some(AddModelState {
+                field: AddModelField::ModelName,
+                base_url: "http://localhost:9999/v1".into(),
+                api_key_env: String::new(),
+                model_name: String::new(),
+            }),
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            app.add_model.as_ref().map(|s| s.field),
+            Some(AddModelField::ModelName),
+            "empty model name must be refused"
+        );
+        assert_eq!(app.screen, Screen::AddModel);
+    }
+
+    #[test]
+    fn palette_select_custom_model_sends_turn_with_it() {
+        let mut app = RatatuiTui {
+            screen: Screen::Palette,
+            chat: vec![ChatRow {
+                role: "user".into(),
+                content: "why?".into(),
+            }],
+            palette_models: vec!["m1".into(), "my-custom-model".into()],
+            palette_index: 1,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            action,
+            KeyAction::SendTurn {
+                question: "why?".into(),
+                model: "my-custom-model".into()
+            }
+        );
+        assert_eq!(app.screen, Screen::Chat);
+        assert_eq!(app.model, "my-custom-model");
+    }
+
+    #[test]
+    fn client_for_model_uses_custom_provider_client() {
+        let _g = aether_core::testutil::lock_env();
+        let dir = isolate("client-for-model");
+        let mut config = aether_core::config::AetherConfig::default();
+        config.providers.custom.push(CustomProviderConfig {
+            name: "localhost:9999".into(),
+            base_url: "http://localhost:9999/v1".into(),
+            api_key_env: Some("MY_KEY".into()),
+            models: vec!["my-model".into()],
+            default_model: None,
+        });
+        persist_config(&config);
+
+        let client = RatatuiTui::client_for_model("my-model").unwrap();
+        let debug = format!("{client:?}");
+        assert!(
+            debug.contains("http://localhost:9999/v1"),
+            "a custom model must be served by its own endpoint, got: {debug}"
+        );
+    }
+
+    #[test]
+    fn client_for_model_falls_back_to_default_provider() {
+        let _g = aether_core::testutil::lock_env();
+        isolate("client-fallback");
+        let client = RatatuiTui::client_for_model("no-such-model").unwrap();
+        let debug = format!("{client:?}");
+        assert!(
+            debug.contains("opencode.ai/zen/v1"),
+            "an unknown model must fall back to the default provider, got: {debug}"
+        );
+    }
+
+    #[test]
+    fn provider_name_from_base_url_derives_host() {
+        assert_eq!(
+            provider_name_from_base_url("http://localhost:1234/v1"),
+            "localhost:1234"
+        );
+        assert_eq!(
+            provider_name_from_base_url("https://api.example.com/v1"),
+            "api.example.com"
+        );
+        assert_eq!(provider_name_from_base_url("  https://x.io  "), "x.io");
+        assert_eq!(provider_name_from_base_url(""), "custom");
+        assert_eq!(provider_name_from_base_url("///"), "custom");
     }
 }

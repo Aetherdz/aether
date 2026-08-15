@@ -9,6 +9,14 @@ minors may still break surface APIs).
 
 ### Added
 
+- TUI: interactive model picker — the ctrl+P palette (also reachable via
+  `/model`) now lists the provider's static models plus every custom model
+  from `config.json`, highlights the active model, wraps around with j/k,
+  and offers an `+ add custom model` entry that walks through base URL,
+  API key env var name, and model name (Esc cancels at any step) and
+  persists the provider via `save_config`. Selecting a model re-sends the
+  last question against it; custom models are served by their own provider
+  endpoint (`client_for_model`).
 - TUI: dynamic terminal tab/window title (OSC 0 via crossterm `SetTitle`) —
   shows the current page (`aether — sessions` / `aether — chat` /
   `aether — agent loop`) and switches to `aether — <session> | <model>`
