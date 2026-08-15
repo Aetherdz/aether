@@ -113,6 +113,38 @@ pub fn render_tabs(tabs: &[(&'static str, bool)], total_width: u16) -> Line<'sta
     Line::from(spans)
 }
 
+/// ASCII art for the aether brand mark: an ascending triangle — the
+/// plan → build → route flow. Each line is a `&str`; callers may join them
+/// vertically for a sidebar or print one line per row.
+pub const LOGO: [&str; 5] = [
+    "      ▲",
+    "     ▲ ▲",
+    "    ▲   ▲",
+    "   ▲     ▲",
+    "  ▲ ▲ ▲ ▲ ▲",
+];
+
+/// Render the full logo as one multi-line `Line` per row, with the apex in
+/// brand green and the base in cyan, ending with the wordmark.
+pub fn render_logo() -> Vec<Line<'static>> {
+    let mut out = Vec::with_capacity(LOGO.len() + 1);
+    for (i, row) in LOGO.iter().enumerate() {
+        let color = if i == 0 {
+            GREEN
+        } else if i == LOGO.len() - 1 {
+            ACCENT
+        } else {
+            CYAN
+        };
+        out.push(Line::from(Span::styled(*row, Style::new().fg(color))));
+    }
+    out.push(Line::from(Span::styled(
+        "aether",
+        Style::new().fg(GREEN).add_modifier(Modifier::BOLD),
+    )));
+    out
+}
+
 /// Truncate `s` to at most `max` characters, appending a single `…` when
 /// anything was cut. Char boundaries are respected — multi-byte characters are
 /// never split.
@@ -210,5 +242,28 @@ mod tests {
         let line = render_header(&sample_data(), 4);
         assert!(line.width() >= 4);
         assert!(line.to_string().contains("aetherdz"));
+    }
+
+    #[test]
+    fn logo_renders_five_art_rows_plus_wordmark() {
+        let lines = render_logo();
+        assert_eq!(lines.len(), LOGO.len() + 1);
+        assert!(lines[0].to_string().contains('▲'));
+        assert!(lines[lines.len() - 1].to_string().trim() == "aether");
+    }
+
+    #[test]
+    fn logo_rows_are_colored_alternating() {
+        let lines = render_logo();
+        let apex = &lines[0].spans[0].style.fg;
+        let base = &lines[LOGO.len() - 1].spans[0].style.fg;
+        assert_eq!(*apex, Some(GREEN));
+        assert_eq!(*base, Some(ACCENT));
+        assert!(
+            lines[lines.len() - 1].spans[0]
+                .style
+                .add_modifier
+                .contains(Modifier::BOLD)
+        );
     }
 }
