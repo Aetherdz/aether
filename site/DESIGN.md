@@ -7,15 +7,16 @@
 - Imagen drafts: none — logo designed by hand as original SVG mark.
 - Skipped lanes: ui-ux-db CLI — palette dictated by the two named references plus explicit user direction to black & white.
 - 2026-08-15 template adoption: opencode.ai install tabs + FAQ accordion; jcode.sh platform buttons + stats strip + comparison table — all rendered in the existing monochrome tokens (no palette change, no new colors).
+- 2026-08-15 dark flip: user + coordinator approved flipping the light pass to **dark monochrome** (opencode.ai / jcode.sh darkness). Roles inverted — paper becomes accent, ink becomes surface. Same tokens, same structure, zero new colors. Logo inverted to keep its contrast-anchor role (now the only light object).
 
 ## 1. Atmosphere & Identity
 
 A quiet command center. Dense when needed, spacious when not.
 The signature is **terminal honesty** — the page reads like an editor buffer:
 monospace everywhere, hairlines instead of shadows, and **no color at all**:
-pure black ink on white paper, with grays doing the hierarchy work.
+pure paper text on near-black ink, with grays doing the hierarchy work.
 It feels like a good terminal emulator: fast, monochrome, exact.
-The logo is the only dark object — a black tile with a blinking white cursor —
+The logo is the only light object — a paper tile with a blinking ink cursor —
 so the mark itself becomes the page's single point of contrast.
 
 ## 2. Color
@@ -24,24 +25,24 @@ so the mark itself becomes the page's single point of contrast.
 
 | Role | Token | Value | Usage |
 |------|-------|-------|-------|
-| Surface/primary | --surface-primary | #FFFFFF | Main background |
-| Surface/secondary | --surface-secondary | #F4F4F4 | Cards, panels, terminal body |
-| Surface/elevated | --surface-elevated | #FFFFFF | Terminal title bar, code blocks |
-| Text/primary | --text-primary | #111111 | Headlines, body, cursor, accent |
-| Text/secondary | --text-secondary | #666666 | Captions, hints, lead |
-| Text/tertiary | --text-tertiary | #999999 | Disabled, muted, path, dim |
-| Border/default | --border-default | #CCCCCC | Cards, dividers, code blocks |
-| Border/subtle | --border-subtle | #E5E5E5 | Soft separations |
-| Accent/primary | --accent-primary | #111111 | Ink — interactive elements ARE the text color (black & white) |
-| Accent/hover | --accent-hover | #000000 | Hover state |
-| Status/success | --status-success | #111111 | Confirmations (copied state) — ink, not green |
-| Status/error | --status-error | #666666 | Errors — gray, not red |
+| Surface/primary | --surface-primary | #0A0A0A | Main background (opencode.ai darkness) |
+| Surface/secondary | --surface-secondary | #111111 | Cards, panels, terminal body |
+| Surface/elevated | --surface-elevated | #161616 | Terminal title bar, code blocks, nav, footer |
+| Text/primary | --text-primary | #F5F5F5 | Headlines, body, cursor, accent — "paper" now |
+| Text/secondary | --text-secondary | #A3A3A3 | Captions, hints, lead |
+| Text/tertiary | --text-tertiary | #6B6B6B | Disabled, muted, path, dim |
+| Border/default | --border-default | #2E2E2E | Cards, dividers, code blocks |
+| Border/subtle | --border-subtle | #1F1F1F | Soft separations |
+| Accent/primary | --accent-primary | #F5F5F5 | Paper — interactive elements ARE the text color (black & white) |
+| Accent/hover | --accent-hover | #FFFFFF | Hover state |
+| Status/success | --status-success | #F5F5F5 | Confirmations (copied state) — paper, not green |
+| Status/error | --status-error | #A3A3A3 | Errors — gray, not red |
 
 ### Rules
-- **Black & white is the constraint.** No chromatic color anywhere in the UI. The palette is ink (#111), paper (#FFF), and three grays.
-- Accent = ink. Interactive elements are distinguished by weight, borders, and hover, never by hue.
-- Terminal window dots are monochrome (white/gray outline circles), not macOS traffic-light colors — the one place the reference's color was deliberately stripped to obey the constraint.
-- The logo's dark tile (#111) + white A + blinking white cursor is the ONLY dark surface — it is the page's contrast anchor.
+- **Black & white is the constraint.** No chromatic color anywhere in the UI. The palette is paper (#F5F5F5), ink (#0A0A0A), and three grays. Ink is paper now; paper is ink — roles inverted from the light pass, values mirrored.
+- Accent = paper. Interactive elements are distinguished by weight, borders, and hover, never by hue.
+- Terminal window dots are monochrome (gray outline circles on dark), not macOS traffic-light colors — the one place the reference's color was deliberately stripped to obey the constraint.
+- The logo's paper tile (#F5F5F5) + ink A + blinking ink cursor is the ONLY light surface — it is the page's contrast anchor.
 - Never introduce a color not in this table. Extend the table first.
 
 ## 3. Typography
@@ -100,7 +101,7 @@ All spacing derives from a base of **4px**.
 ## 5. Components
 
 ### Logo Mark (SVG)
-- **Structure**: `<svg>` — black rounded-square tile (fill #111) with geometric "A" monogram in white + blinking white terminal-cursor block as the crossbar. Drawn by hand, original geometry.
+- **Structure**: `<svg>` — paper rounded-square tile (fill #F5F5F5) with geometric "A" monogram in ink (#111) + blinking ink terminal-cursor block as the crossbar. Drawn by hand, original geometry. Inverted with the dark flip so the mark stays the page's single contrast anchor (only light object on dark).
 - **Variants**: full (mark + wordmark "Aether"), mark-only (favicon, nav small), mono-inline (text logo in terminal).
 - **Spacing**: mark 8px gap from wordmark; wordmark in JetBrains Mono 700.
 - **States**: static (no hover state on logo itself).
@@ -113,7 +114,7 @@ All spacing derives from a base of **4px**.
 - **Variants**: grid (3-col, collapses to 1-col under 480px).
 - **Spacing**: --space-6 padding, --space-6 gap.
 - **States**: default hairline border; no hover lift (steps are static content).
-- **Accessibility**: code blocks `user-select: all` for one-click copy; contrast AA on comment (tertiary #999 on #FFF = 3.3:1 — acceptable for non-essential code comments, recorded as debt).
+- **Accessibility**: code blocks `user-select: all` for one-click copy; contrast AA on comment (tertiary #6B6B6B on #111 = 3.5:1 — acceptable for non-essential code comments, recorded as debt).
 - **Layout**: grid primitive.
 
 ### Nav
@@ -175,13 +176,13 @@ All spacing derives from a base of **4px**.
 ## 7. Depth & Surface
 
 ### Strategy
-Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separate by 1px `--border-default` hairlines and one-step tonal shifts (#FFFFFF → #F4F4F4). No shadows anywhere. The only elevated surface is the logo tile, which goes dark (#111) against the white page.
+Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separate by 1px `--border-default` hairlines and one-step tonal shifts (#0A0A0A → #111111 → #161616). No shadows anywhere. The only elevated surface is the logo tile, which goes paper (#F5F5F5) against the dark page.
 
 | Type | Value | Usage |
 |------|-------|-------|
 | Default | 1px solid var(--border-default) | Cards, terminal, code blocks |
 | Subtle | 1px solid var(--border-subtle) | Soft separations |
-| Elevated | #FFFFFF on #F4F4F4 | Terminal title bar pops via tone, not shadow |
+| Elevated | #161616 on #0A0A0A / #111111 | Terminal title bar, code blocks, nav, footer pop via tone, not shadow |
 
 ## 8. Accessibility Constraints & Accepted Debt
 
@@ -195,13 +196,13 @@ Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separat
 ### Accepted Debt
 | Item | Location | Why accepted | Owner / Exit |
 |------|----------|--------------|--------------|
-| Code comment text (#999 on #FFF, 3.3:1) | quickstart steps | Non-essential annotation; below 4.5:1 AA but not load-bearing | Re-evaluate if comments become interactive |
+| Tertiary text (#6B6B6B on #111/#0A0A0A, 3.4–3.7:1) | install meta, step numbers, terminal path, stat/compare/platform notes, footer status, code comments | Non-essential annotations; below 4.5:1 AA but not load-bearing (mirrors the light pass's #999 debt) | Re-evaluate if annotations become interactive |
 
 ### Install Tabs (opencode.ai pattern)
 - **Structure**: `<div class="install-tabs" role="tablist">` → two `<button role="tab">` (curl / source) → `<div class="install-row">` containing two `<div role="tabpanel">` (each wrapping the mono `<code>`) + copy button → `<p class="install-meta" aria-live="polite">`.
 - **Variants**: curl (official installer, default), source (git clone + `cargo build --release`, requires Rust 1.97+).
 - **Spacing**: tabs 4px gap, 8px below; tab padding 4px 12px; row unchanged (12px 16px code padding).
-- **States**: default = paper bg + hairline border + secondary text; hover = ink border + ink text; active (`aria-selected="true"`) = **ink background, paper text** (19:1); focus ring 2px ink offset 2px.
+- **States**: default = transparent bg + hairline border + secondary text; hover = paper border + paper text; active (`aria-selected="true"`) = **paper background, ink text** (18.2:1); focus ring 2px paper offset 2px.
 - **Accessibility**: full ARIA tabs pattern — `role=tablist/tab/tabpanel`, `aria-selected`, `aria-controls`, `aria-labelledby`, roving `tabindex` (0/-1), ArrowLeft/Right + Home/End rotation, click + focus. Meta line swaps per tab via `data-meta` (aria-live polite). Copy button copies the **active** tab's command.
 - **Motion**: color/border 150ms ease-out only.
 - **Layout**: centered cluster; panels `flex:1 min-width:0` so long source command scrolls horizontally, never breaks the row.
@@ -210,7 +211,7 @@ Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separat
 - **Structure**: `<div class="platforms">` → three `<a class="platform-btn">` (macOS / Linux / Windows) each with a 14px mono download-arrow glyph (SVG stroke, currentColor) + label.
 - **Variants**: single (all three link to `https://github.com/Aetherdz/aether/releases/latest`; per-arch binaries `aether-{linux,macos}-{x86_64,aarch64}` + `aether-windows-x86_64.exe` and `SHA256SUMS.txt` live there).
 - **Spacing**: 12px gap, 16px above, 12px below to note.
-- **States**: default hairline border + ink text; hover ink border + secondary bg; focus ring 2px ink.
+- **States**: default hairline border + paper text; hover paper border + elevated bg; focus ring 2px paper.
 - **Accessibility**: real `<a>` links (not buttons) with `rel="noopener"`; glyph `aria-hidden`; label is text.
 - **Layout**: flex cluster, wraps on mobile.
 
@@ -219,7 +220,7 @@ Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separat
 - **Variants**: single (4-up: 4.99 MB / ~112 ms / ~5 MB / 267).
 - **Spacing**: 24px gap; card padding 24px; note 16px below grid.
 - **States**: static (no hover — data, not interaction).
-- **Accessibility**: `<dl>` semantics (dt = value, dd = label); values ink on #F4F4F4 ≈ 18.6:1; labels #666 ≈ 5.7:1; note #999 = 3.3:1 non-essential annotation (accepted debt, see §8).
+- **Accessibility**: `<dl>` semantics (dt = value, dd = label); values paper on #111 ≈ 17.3:1; labels #A3A3A3 ≈ 7.5:1; note #6B6B6B = 3.5:1 non-essential annotation (accepted debt, see §8).
 - **Layout**: 4-col grid → 2-col @768px → 1-col @480px.
 
 ### FAQ Accordion (opencode.ai pattern)
@@ -234,7 +235,7 @@ Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separat
 ### Comparison Table (jcode.sh pattern)
 - **Structure**: `<section class="compare">` → overline + section title → `<div class="table-wrap">` → `<table class="compare-table">` (thead: — / Aether / Node-based agents; tbody: 7 rows) → `<p class="compare-note">` honesty footnote.
 - **Variants**: single (Runtime, Binary size, Startup, Agent loop, Sessions as files, MCP server, Telemetry).
-- **Spacing**: cell padding 12px 16px; hairline row borders; header row on #F4F4F4.
+- **Spacing**: cell padding 12px 16px; hairline row borders; header row on #111111.
 - **States**: static.
-- **Accessibility**: `scope="col"` / `scope="row"`; Aether column values in ink `<strong>`; other column #666 (7.5:1); footnote #999 non-essential (accepted debt).
+- **Accessibility**: `scope="col"` / `scope="row"`; Aether column values in paper `<strong>`; other column #A3A3A3 (7.5:1); footnote #6B6B6B non-essential (accepted debt).
 - **Layout**: `overflow-x: auto` wrapper for mobile; row-header column `white-space: nowrap`.
