@@ -7,46 +7,35 @@ minors may still break surface APIs).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-15
+
+### Security
+
+- Sandbox replaced with cap-std capability isolation (no more lexical
+  path matching) — closes the Phase-1 audit item.
+- Approval gate for dangerous `run_command` patterns (`rm -rf`,
+  `git push --force`, `curl | sh`, ...) + per-project allowlist; `--yes`
+  bypass only after explicit user intent.
+- Session `delete()` routed through `safe_join` — blocks traversal IDs.
+- Sync rejects bundles with unknown format version.
+- CI: cargo-audit (advisories) + cargo-deny (licenses/bans/sources) gates;
+  `--workspace --all-targets` on build/test/clippy; windows/macos/linux
+  matrix now fully green.
+
 ### Added
 
-- TUI: error styling — failures render in red (`theme::danger`) in both the
-  chat status line and the sessions footer, instead of muted gray.
-- TUI: Agent screen now renders three real horizontal panels
-  (PLAN / BUILD / ROUTE) with distinct accent colors and an iteration
-  progress bar in the BUILD panel.
-- TUI: fenced code blocks (` ```lang `) in assistant replies get a distinct
-  background and a language label; indentation is preserved when lines wrap.
-- TUI: scrollbar on the transcript when history exceeds the viewport.
-- TUI: live token accounting — `input`/`output` counters update as `Usage`
-  events stream in, not only when the reply finishes.
-- Agent/TUI: `write_file` diffs — `ToolResult` and `AgentPhase::ToolCalled`
-  carry a rendered `+`/`-` preview, and the Agent BUILD panel shows the last
-  write diff inline (up to 12 lines) under the tool name.
-- Tests: usage-counter live update, code-block rendering, write-diff carry +
-  BUILD-panel rendering, and 10 earlier editing/palette/stream cases (now 56
-  in `aether-tui`, 167 workspace-wide).
-- README: explicit privacy note for the built-in free `zen` provider
-  (hosted by opencode.ai at `https://opencode.ai/zen/v1`), clarified
-  stability wording, and a rewritten feature checklist.
-- Docs: `docs/zen-privacy.md` — every privacy claim mapped to a source
-  line (no telemetry code paths, `key_env: None` for zen, only
-  `chat/completions` endpoint, `OPENCODE_ZEN_API_KEY` used for paid
-  models only).
-- CI: cargo-audit (advisories) + cargo-deny (licenses/bans/sources) gates;
-  `--workspace --all-targets` on build/test/clippy; README test badge now
-  192 passing.
-- Docs: `docs/feature-matrix.md` — honest coverage matrix vs OpenCode and
-  Aider ("covers what they have", not a superiority claim), with a
-  "Verified against source" table and marked gaps (MCP client, git
-  auto-commit, slash commands, watch mode, plugins, subagents).
-- Benchmark: `crates/aether-agent/tests/maturity_bench.rs` — deterministic
-  (no-LLM) maturity proof: read/search/list, write+undo round-trip,
-  sandbox escape block, and benign command run against 5 real repos
-  (express, requests, ripgrep, jq, bootstrap), skippable in hermetic CI;
-  `benchmark/maturity.sh` clones the repos.
-- Tests: workspace-wide serialization of env-mutating tests via
-  `aether_core::testutil` (single lock shared by session/sync/mcp/tui)
-  — kills a cross-crate race on `AETHER_CONFIG_DIR` that flaked CI.
+- `docs/zen-privacy.md` — every privacy claim mapped to a source line.
+- `docs/feature-matrix.md` — honest coverage matrix vs OpenCode/Aider
+  (coverage, not a superiority claim).
+- Maturity benchmark: `crates/aether-agent/tests/maturity_bench.rs` —
+  deterministic (no-LLM) proof on 5 real repos (express, requests,
+  ripgrep, jq, bootstrap): read/search/list, write+undo round-trip,
+  sandbox escape block, benign command run; `benchmark/maturity.sh`
+  clones the repos; skips cleanly in hermetic CI.
+- TUI: agent 3-panel screen (PLAN/BUILD/ROUTE), write-diff preview in the
+  BUILD panel, code-block rendering, scrollbar, error styling, live token
+  counters, slash-command palette, usage bar.
+- CLI: `aether tui` guarded behind an IsTerminal check.
 
 ### Changed
 
@@ -58,20 +47,16 @@ minors may still break surface APIs).
   updated by the streaming `Usage` handler — previously double-counted).
 - README: comparison tables drop the "default provider" and "install
   method" rows; emoji checkmarks replaced with `Yes`/`No`/`Partial`;
-  added an "Interface" row; badge now 165.
+  added an "Interface" row.
 
 ### Fixed
 
-- Agent: `write_file` undo for brand-new files — a fresh file now gets a
-  `was_new` snapshot so `undo` deletes it instead of restoring a phantom
-  previous version (caught by the real-repo maturity benchmark).
-- Agent: undo file-missing detection is platform-independent
-  (`sandbox.exists()` instead of Unix-only error-string matching) — the
-  Windows CI failure is gone.
-- Tests: env-mutating tests across crates (session/sync/mcp/tui) now
-  serialize on one shared `aether_core::testutil` lock instead of four
-  per-crate locks, eliminating a `cargo test --workspace` race on
-  `AETHER_CONFIG_DIR`.
+- `write_file` undo for brand-new files (`was_new` snapshots) — caught by
+  the real-repo maturity benchmark.
+- Undo file-missing detection platform-independent (`sandbox.exists()`).
+- Cross-crate race on `AETHER_CONFIG_DIR` in `cargo test --workspace`
+  (shared lock in `aether_core::testutil`).
+- Install script idempotent + reliable update path.
 
 ## [0.2.0] — 2026-08-10
 
