@@ -9,6 +9,9 @@ minors may still break surface APIs).
 
 ### Changed
 
+- TUI: error/status indicators render as plain colored text — `✗` replaced
+  with an `error:` label in the danger style, `⏳`/`●` status glyphs dropped
+  from the chat status line (list cursor `▸` and spinner kept).
 - TUI: quit keys re-engineered to match opencode — ctrl+C toggles a
   centered quit-confirmation dialog (never quits directly), Esc cancels
   the dialog or backs out of screens, `q` is the only key that quits.

@@ -1012,7 +1012,10 @@ impl RatatuiTui {
         let totals = &self.totals;
         let (left, left_style) = match &self.last_error {
             Some(err) => (
-                format!("✗ {}", err.to_string().lines().next().unwrap_or_default()),
+                format!(
+                    "error: {}",
+                    err.to_string().lines().next().unwrap_or_default()
+                ),
                 theme::danger(),
             ),
             None => (
@@ -1090,20 +1093,23 @@ impl RatatuiTui {
         }
 
         let status = if let Some(err) = &self.last_error {
-            Span::styled(
-                format!("✗ {}", err.to_string().lines().next().unwrap_or_default()),
-                theme::danger(),
-            )
+            Line::from(vec![
+                Span::styled("error:", theme::danger()),
+                Span::raw(format!(
+                    " {}",
+                    err.to_string().lines().next().unwrap_or_default()
+                )),
+            ])
         } else {
-            match self.processing {
+            Line::from(match self.processing {
                 ProcessingStatus::Idle => Span::styled("ready", theme::muted()),
-                ProcessingStatus::Thinking => Span::styled("⏳ thinking…", theme::accent()),
+                ProcessingStatus::Thinking => Span::styled("thinking…", theme::accent()),
                 ProcessingStatus::Streaming(n) => {
-                    Span::styled(format!("● streaming · {n} chunks"), theme::accent())
+                    Span::styled(format!("streaming · {n} chunks"), theme::accent())
                 }
-            }
+            })
         };
-        frame.render_widget(Paragraph::new(Line::from(status)), status_area);
+        frame.render_widget(Paragraph::new(status), status_area);
 
         let input_widget = Paragraph::new(if self.stream.is_some() {
             Line::from(Span::styled("streaming…", theme::muted()))
@@ -1597,6 +1603,79 @@ mod tests {
                 }
             }
             assert!(found, "{screen:?} must render the ▸ highlight symbol");
+        }
+    }
+
+    #[test]
+    fn error_renders_plain_text_not_symbol() {
+        use ratatui::backend::TestBackend;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        for screen in [Screen::Sessions, Screen::Chat] {
+            let mut app = RatatuiTui {
+                screen,
+                last_error: Some(TuiError::Provider("boom".into())),
+                ..Default::default()
+            };
+            terminal
+                .draw(|frame| app.draw(frame))
+                .expect("draw must not fail");
+            let buffer = terminal.backend().buffer();
+            let mut text = String::new();
+            for y in 0..buffer.area.height {
+                for x in 0..buffer.area.width {
+                    if let Some(cell) = buffer.cell((x, y)) {
+                        text.push_str(cell.symbol());
+                    }
+                }
+            }
+            assert!(
+                text.contains("error:"),
+                "{screen:?} must render 'error:' text, got: {text:?}"
+            );
+            assert!(
+                !text.contains('✗'),
+                "{screen:?} must not render the ✗ glyph, got: {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn status_indicators_are_plain_text() {
+        use ratatui::backend::TestBackend;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        for (processing, expected) in [
+            (ProcessingStatus::Thinking, "thinking"),
+            (ProcessingStatus::Streaming(3), "streaming"),
+        ] {
+            let mut app = RatatuiTui {
+                screen: Screen::Chat,
+                processing,
+                ..Default::default()
+            };
+            terminal
+                .draw(|frame| app.draw(frame))
+                .expect("draw must not fail");
+            let buffer = terminal.backend().buffer();
+            let mut text = String::new();
+            for y in 0..buffer.area.height {
+                for x in 0..buffer.area.width {
+                    if let Some(cell) = buffer.cell((x, y)) {
+                        text.push_str(cell.symbol());
+                    }
+                }
+            }
+            assert!(
+                text.contains(expected),
+                "status must show '{expected}', got: {text:?}"
+            );
+            assert!(
+                !text.contains('⏳') && !text.contains('●'),
+                "status must not render symbol glyphs, got: {text:?}"
+            );
         }
     }
 
