@@ -40,12 +40,17 @@ pub struct RestoredSnapshot {
     pub bytes: usize,
 }
 
-/// On-disk snapshot file: `{ "seq": 1, "rel": "a/b.txt", "content": "..." }`.
+/// On-disk snapshot file: `{ "seq": 1, "rel": "a/b.txt", "content": "...", "was_new": false }`.
+///
+/// `was_new` records whether the file did not exist before the write; undo
+/// then *deletes* it instead of restoring a phantom previous content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SnapFile {
     seq: u32,
     rel: String,
     content: String,
+    #[serde(default)]
+    was_new: bool,
 }
 
 /// Disk-backed snapshot journal rooted at `<sandbox_root>/.aether-undo`.
@@ -84,7 +89,7 @@ impl UndoJournal {
     }
 
     /// Save `content` as the newest snapshot for `rel`. Returns the seq.
-    pub fn snapshot(&self, rel: &str, content: &str) -> Result<u32> {
+    pub fn snapshot(&self, rel: &str, content: &str, was_new: bool) -> Result<u32> {
         // Lexical pre-check for a clear error message; the capability handle
         // below is the actual boundary.
         safe_join_rel(self.root(), rel)?;
@@ -93,6 +98,7 @@ impl UndoJournal {
             seq,
             rel: rel.to_string(),
             content: content.to_string(),
+            was_new,
         };
         let json = serde_json::to_vec(&snap)?;
         self.sandbox.atomic_write(&self.snap_rel(seq), &json)?;
@@ -126,7 +132,11 @@ impl UndoJournal {
             .rev()
             .find(|s| s.rel == rel)
             .ok_or_else(|| Error::InvalidInput(format!("no snapshot for {rel:?}")))?;
-        self.sandbox.atomic_write(rel, snap.content.as_bytes())?;
+        if snap.was_new {
+            self.sandbox.remove_file(rel)?;
+        } else {
+            self.sandbox.atomic_write(rel, snap.content.as_bytes())?;
+        }
         let restored = RestoredSnapshot {
             seq: snap.seq,
             rel: snap.rel.clone(),
@@ -184,7 +194,7 @@ mod tests {
     fn snapshot_and_restore_round_trip() {
         let root = temp_root("roundtrip");
         let journal = UndoJournal::new(&root);
-        let seq = journal.snapshot("a/b.txt", "v1").unwrap();
+        let seq = journal.snapshot("a/b.txt", "v1", false).unwrap();
         assert_eq!(seq, 1);
         std::fs::create_dir_all(root.join("a")).unwrap();
         std::fs::write(root.join("a/b.txt"), "v2").unwrap();
@@ -200,9 +210,9 @@ mod tests {
         let root = temp_root("pop");
         let journal = UndoJournal::new(&root);
         std::fs::write(root.join("f.txt"), "v0").unwrap();
-        journal.snapshot("f.txt", "v0").unwrap(); // seq 1
+        journal.snapshot("f.txt", "v0", false).unwrap(); // seq 1
         std::fs::write(root.join("f.txt"), "v1").unwrap();
-        journal.snapshot("f.txt", "v1").unwrap(); // seq 2
+        journal.snapshot("f.txt", "v1", false).unwrap(); // seq 2
         std::fs::write(root.join("f.txt"), "v2").unwrap();
 
         let first = journal.restore("f.txt").unwrap();
@@ -221,8 +231,8 @@ mod tests {
     fn list_reports_metadata() {
         let root = temp_root("list");
         let journal = UndoJournal::new(&root);
-        journal.snapshot("x.txt", "hello").unwrap();
-        journal.snapshot("y.txt", "world").unwrap();
+        journal.snapshot("x.txt", "hello", false).unwrap();
+        journal.snapshot("y.txt", "world", false).unwrap();
         let snaps = journal.list().unwrap();
         assert_eq!(snaps.len(), 2);
         assert_eq!(snaps[0].rel, "x.txt");
@@ -232,10 +242,26 @@ mod tests {
     }
 
     #[test]
+    fn restore_was_new_deletes_the_file() {
+        let root = temp_root("wasnew");
+        let journal = UndoJournal::new(&root);
+        journal.snapshot("new.txt", "", true).unwrap();
+        std::fs::write(root.join("new.txt"), "agent wrote this").unwrap();
+        assert!(root.join("new.txt").exists());
+        let restored = journal.restore("new.txt").unwrap();
+        assert_eq!(restored.seq, 1);
+        assert!(
+            !root.join("new.txt").exists(),
+            "was_new undo must delete the file"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn restore_rejects_out_of_sandbox_paths() {
         let root = temp_root("escape");
         let journal = UndoJournal::new(&root);
-        journal.snapshot("ok.txt", "x").unwrap();
+        journal.snapshot("ok.txt", "x", false).unwrap();
         for bad in ["../etc/passwd", "/etc/passwd", "a/../../b"] {
             assert!(
                 matches!(journal.restore(bad), Err(Error::PathTraversal(_))),
@@ -249,8 +275,8 @@ mod tests {
     fn snapshot_rejects_out_of_sandbox_paths() {
         let root = temp_root("snapesc");
         let journal = UndoJournal::new(&root);
-        assert!(journal.snapshot("../evil", "x").is_err());
-        assert!(journal.snapshot("/etc/passwd", "x").is_err());
+        assert!(journal.snapshot("../evil", "x", false).is_err());
+        assert!(journal.snapshot("/etc/passwd", "x", false).is_err());
         let _ = std::fs::remove_dir_all(&root);
     }
 

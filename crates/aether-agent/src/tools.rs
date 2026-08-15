@@ -428,10 +428,11 @@ impl Tools {
             }
         }
 
-        // Snapshot the file being replaced BEFORE overwriting it.
-        if let Some(old_content) = &old {
-            self.undo.snapshot(rel, old_content)?;
-        }
+        // Snapshot the file being replaced BEFORE overwriting it. New files
+        // get a was_new snapshot so undo deletes them rather than restoring
+        // a phantom previous version.
+        self.undo
+            .snapshot(rel, old.as_deref().unwrap_or(""), old.is_none())?;
 
         self.sandbox.atomic_write(rel, content.as_bytes())?;
         Ok(ToolResult {
