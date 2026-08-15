@@ -79,6 +79,8 @@ impl Tui for NoopTui {
 }
 
 /// Shared visual language: Modern Dark (slate + success-green accent).
+/// Semantic roles — green = brand/you/positive (the single accent), indigo =
+/// AI/agent, sky = info/titles, slate = borders/muted, red = danger.
 /// RGB values from the ui-ux-pro-max design system for developer tools.
 mod theme {
     use ratatui::style::{Color, Modifier, Style};
@@ -307,6 +309,41 @@ fn agent_badge(phase: agent_screen::ScreenPhase) -> Line<'static> {
         spans.push(Span::styled(*stage, style));
     }
     Line::from(spans)
+}
+
+/// Welcome screen for an empty chat: the aether logo centered in the
+/// transcript, a `plan · build · route` tagline on the wordmark line, and a
+/// muted hint line — vertically centered inside the transcript's inner area.
+/// Pure — unit-testable without a terminal.
+fn welcome_rows(width: u16, height: u16) -> Vec<Line<'static>> {
+    let inner = width.saturating_sub(2) as usize;
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    let logo = chrome::render_logo();
+    let last = logo.len() - 1;
+    for (i, logo_line) in logo.into_iter().enumerate() {
+        let mut spans = logo_line.spans;
+        if i == last {
+            spans.push(Span::styled(" — plan · build · route", theme::muted()));
+        }
+        let text_len: usize = spans.iter().map(|s| s.width()).sum();
+        let pad = inner.saturating_sub(text_len) / 2;
+        let mut full = vec![Span::raw(" ".repeat(pad))];
+        full.extend(spans);
+        rows.push(Line::from(full));
+    }
+    rows.push(Line::from(""));
+    let hint = "type a message to start · / for commands · ctrl+P for model";
+    let pad = inner.saturating_sub(hint.chars().count()) / 2;
+    rows.push(Line::from(vec![
+        Span::raw(" ".repeat(pad)),
+        Span::styled(hint, theme::muted()),
+    ]));
+    let inner_h = height.saturating_sub(2) as usize;
+    let top = inner_h.saturating_sub(rows.len()) / 2;
+    let mut padded = Vec::with_capacity(top + rows.len());
+    padded.extend(std::iter::repeat_with(|| Line::from("")).take(top));
+    padded.extend(rows);
+    padded
 }
 
 /// The full ratatui application state.
@@ -1300,6 +1337,7 @@ impl RatatuiTui {
         let vertical = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]);
         let [list_area, footer_area] = vertical.areas(body);
 
+        let inner = list_area.width.saturating_sub(2) as usize;
         let items: Vec<ListItem> = self
             .sessions
             .iter()
@@ -1307,8 +1345,12 @@ impl RatatuiTui {
                 let title = s.title.as_deref().unwrap_or("(untitled)");
                 let stats = format!(
                     "{} in / {} out · {} msgs",
-                    s.stats.input_tokens, s.stats.output_tokens, s.messages
+                    chrome::format_tokens(s.stats.input_tokens),
+                    chrome::format_tokens(s.stats.output_tokens),
+                    s.messages
                 );
+                let title_max = inner.saturating_sub(stats.chars().count() + 2);
+                let title = chrome::truncate(title, title_max.saturating_sub(1));
                 ListItem::new(Line::from(vec![
                     Span::styled(title, Style::default().fg(Color::White)),
                     Span::styled("  ", theme::muted()),
@@ -1352,6 +1394,20 @@ impl RatatuiTui {
 
     fn draw_chat(&mut self, frame: &mut Frame, body: Rect) {
         self.drain_agent_events();
+        // The usage/session sidebar is a full-height right rail (opencode
+        // style): it spans the transcript + status + input + usage rows, so
+        // those stay aligned with the transcript column. The footer is the
+        // only full-width row. Skipped on narrow terminals so the transcript
+        // keeps the full width.
+        let rail = Rect::new(body.x, body.y, body.width, body.height.saturating_sub(1));
+        let (left_col, sidebar_area) = if rail.width >= SIDEBAR_MIN_BODY_WIDTH {
+            let horizontal =
+                Layout::horizontal([Constraint::Min(0), Constraint::Length(SIDEBAR_WIDTH)]);
+            let [left, sidebar] = horizontal.areas(rail);
+            (left, Some(sidebar))
+        } else {
+            (rail, None)
+        };
         let vertical = Layout::vertical([
             Constraint::Min(0),
             Constraint::Length(1),
@@ -1359,19 +1415,9 @@ impl RatatuiTui {
             Constraint::Length(1),
             Constraint::Length(1),
         ]);
-        let [body_area, status_area, input_area, usage_area, footer_area] = vertical.areas(body);
-
-        // Right usage/session sidebar (opencode-style): a fixed-width column
-        // on the right edge of the transcript. Skipped on narrow terminals so
-        // the transcript keeps the full width.
-        let (transcript_area, sidebar_area) = if body_area.width >= SIDEBAR_MIN_BODY_WIDTH {
-            let horizontal =
-                Layout::horizontal([Constraint::Min(0), Constraint::Length(SIDEBAR_WIDTH)]);
-            let [transcript, sidebar] = horizontal.areas(body_area);
-            (transcript, Some(sidebar))
-        } else {
-            (body_area, None)
-        };
+        let [body_area, status_area, input_area, usage_area, footer_area] =
+            vertical.areas(left_col);
+        let footer_area = Rect::new(body.x, footer_area.y, body.width, 1);
 
         // Visible window of rows (oldest at top, scroll up to reveal history).
         let viewport = body_area.height as usize;
@@ -1385,7 +1431,7 @@ impl RatatuiTui {
             .iter()
             .skip(start)
             .take(viewport)
-            .flat_map(|r| self.render_message(r, transcript_area.width))
+            .flat_map(|r| self.render_message(r, body_area.width))
             .collect();
         if let Some(stream) = &self.stream {
             let tail = stream.buffer.as_str();
@@ -1396,6 +1442,9 @@ impl RatatuiTui {
                 Span::raw(tail),
             ]));
         }
+        if rows.is_empty() {
+            rows = welcome_rows(body_area.width, body_area.height);
+        }
         let transcript = Paragraph::new(rows)
             .block(
                 Block::default()
@@ -1404,14 +1453,14 @@ impl RatatuiTui {
                     .title(" transcript "),
             )
             .wrap(Wrap { trim: false });
-        frame.render_widget(transcript, transcript_area);
+        frame.render_widget(transcript, body_area);
 
         if total > viewport {
             let sb_area = Rect::new(
-                transcript_area.right().saturating_sub(1),
-                transcript_area.y,
+                body_area.right().saturating_sub(1),
+                body_area.y,
                 1,
-                transcript_area.height,
+                body_area.height,
             );
             let mut sb_state = ScrollbarState::new(total).position(end.saturating_sub(viewport));
             frame.render_stateful_widget(
@@ -1474,9 +1523,11 @@ impl RatatuiTui {
         };
         frame.render_widget(Paragraph::new(status), status_area);
 
+        let inner = input_area.width.saturating_sub(2) as usize;
+        let shown = tail_with_ellipsis(&self.input, inner.saturating_sub(2));
         let input_widget = Paragraph::new(Line::from(vec![
             Span::styled("> ", theme::accent()),
-            Span::raw(self.input.as_str()),
+            Span::raw(shown),
         ]))
         .block(
             Block::default()
@@ -1763,12 +1814,38 @@ impl RatatuiTui {
             )));
         }
 
+        // Live phase status in the panel header: the panel that owns the
+        // current stage shows `· planning` / `· building` / `· routing` in
+        // its role color, so the active stage is visible at a glance.
+        let phase_label = match (title, state.phase) {
+            (
+                "PLAN",
+                agent_screen::ScreenPhase::Planning | agent_screen::ScreenPhase::PlanReady,
+            ) => Some("planning"),
+            (
+                "BUILD",
+                agent_screen::ScreenPhase::BuildStarted
+                | agent_screen::ScreenPhase::ToolCalled
+                | agent_screen::ScreenPhase::BuildFinished,
+            ) => Some("building"),
+            ("ROUTE", agent_screen::ScreenPhase::Routing | agent_screen::ScreenPhase::Routed) => {
+                Some("routing")
+            }
+            _ => None,
+        };
+        let title_line = match phase_label {
+            Some(label) => Line::from(vec![
+                Span::styled(format!(" {title} "), header_style),
+                Span::styled(format!("· {label} "), header_style),
+            ]),
+            None => Line::from(Span::styled(format!(" {title} "), header_style)),
+        };
         let panel = Paragraph::new(lines)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_style(theme::border())
-                    .title(Span::styled(format!(" {title} "), header_style)),
+                    .title(title_line),
             )
             .wrap(Wrap { trim: false });
         frame.render_widget(panel, area);
@@ -1781,17 +1858,27 @@ impl RatatuiTui {
         let y = body.y + body.height.saturating_sub(h) / 2;
         let palette_rect = Rect::new(x, y, w, h);
 
+        let inner = w.saturating_sub(2) as usize;
         let mut items: Vec<ListItem> = self
             .palette_models
             .iter()
             .map(|m| {
                 let line = if m == &self.model {
+                    let suffix = "  (active)";
+                    let max = inner.saturating_sub(2 + suffix.chars().count());
                     Line::from(vec![
-                        Span::styled(m, Style::default().fg(Color::White)),
-                        Span::styled("  (active)", theme::accent()),
+                        Span::styled(
+                            chrome::truncate(m, max.saturating_sub(1)),
+                            Style::default().fg(Color::White),
+                        ),
+                        Span::styled(suffix, theme::accent()),
                     ])
                 } else {
-                    Line::from(Span::styled(m, Style::default().fg(Color::White)))
+                    let max = inner.saturating_sub(2);
+                    Line::from(Span::styled(
+                        chrome::truncate(m, max.saturating_sub(1)),
+                        Style::default().fg(Color::White),
+                    ))
                 };
                 ListItem::new(line)
             })
@@ -1834,11 +1921,15 @@ impl RatatuiTui {
             },
             None => ("", ""),
         };
+        let inner = w.saturating_sub(2) as usize;
+        let prompt_prefix = format!("{prompt}: ");
+        let value_max = inner.saturating_sub(prompt_prefix.chars().count());
+        let value = chrome::truncate(value, value_max.saturating_sub(1));
         let lines = vec![
             Line::from(Span::styled("add custom model", theme::title())),
             Line::from(""),
             Line::from(vec![
-                Span::styled(format!("{prompt}: "), theme::accent()),
+                Span::styled(prompt_prefix, theme::accent()),
                 Span::raw(value),
             ]),
             Line::from(""),
@@ -1862,11 +1953,13 @@ impl RatatuiTui {
         let y = body.y + body.height.saturating_sub(h) / 2;
         let cmd_rect = Rect::new(x, y, w, h);
 
+        let inner = w.saturating_sub(2) as usize;
         let items: Vec<ListItem> = SlashCmd::ALL
             .iter()
             .map(|c| {
+                let max = inner.saturating_sub(2);
                 ListItem::new(Line::from(Span::styled(
-                    c.label(),
+                    chrome::truncate(c.label(), max.saturating_sub(1)),
                     Style::default().fg(Color::White),
                 )))
             })
@@ -1988,6 +2081,19 @@ fn provider_name_from_base_url(base_url: &str) -> String {
     } else {
         host.to_string()
     }
+}
+
+/// Keep the most recent `max` chars of `s`, prefixing a `…` when anything
+/// was cut — the chat input shows the tail of long text so the chars being
+/// typed right now stay visible. Pure — unit-testable without a terminal.
+fn tail_with_ellipsis(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        return s.to_string();
+    }
+    let keep = max.saturating_sub(1);
+    let tail: String = s.chars().skip(count - keep).collect();
+    format!("…{tail}")
 }
 
 /// Delete the whitespace-delimited word left of the cursor (ctrl+W).
@@ -3790,6 +3896,78 @@ mod tests {
         assert_eq!(
             parse_title_response(b"\x1B[?2026h\x1B]2;my-shell\x07\x1B[?2026l"),
             Some("my-shell".to_string())
+        );
+    }
+
+    #[test]
+    fn welcome_rows_centers_logo_and_hints() {
+        let rows = welcome_rows(40, 20);
+        let text: Vec<String> = rows.iter().map(|l| l.to_string()).collect();
+        assert!(
+            text.iter().any(|l| l.contains('▲')),
+            "logo rows must render"
+        );
+        assert!(text.iter().any(|l| l.contains("aether")));
+        assert!(text.iter().any(|l| l.contains("plan · build · route")));
+        assert!(text.iter().any(|l| l.contains("type a message to start")));
+        // Vertically centered: leading rows are blank padding.
+        assert!(rows[0].to_string().trim().is_empty());
+        // Horizontally centered: the first logo row has leading spaces.
+        let logo_row = text.iter().find(|l| l.contains('▲')).unwrap();
+        assert!(logo_row.starts_with(' '));
+    }
+
+    #[test]
+    fn tail_with_ellipsis_keeps_short_input_unchanged() {
+        assert_eq!(tail_with_ellipsis("hi", 5), "hi");
+        assert_eq!(tail_with_ellipsis("", 5), "");
+    }
+
+    #[test]
+    fn tail_with_ellipsis_shows_most_recent_chars() {
+        assert_eq!(tail_with_ellipsis("hello world", 5), "…orld");
+        assert_eq!(tail_with_ellipsis("hello world", 1), "…");
+        assert_eq!(tail_with_ellipsis("hello world", 0), "…");
+    }
+
+    #[test]
+    fn draw_chat_empty_shows_welcome_logo() {
+        use ratatui::backend::TestBackend;
+
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            text.contains('▲'),
+            "an empty chat must show the welcome logo, got: {text:?}"
+        );
+        assert!(text.contains("type a message to start"));
+    }
+
+    #[test]
+    fn draw_chat_with_messages_hides_welcome() {
+        use ratatui::backend::TestBackend;
+
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            chat: vec![ChatRow {
+                role: "user".into(),
+                content: "hi".into(),
+            }],
+            ..Default::default()
+        };
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            !text.contains('▲'),
+            "a chat with messages must not show the welcome, got: {text:?}"
         );
     }
 }

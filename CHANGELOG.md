@@ -64,6 +64,40 @@ minors may still break surface APIs).
   centered quit-confirmation dialog (never quits directly), Esc cancels
   the dialog or backs out of screens, `q` is the only key that quits.
 
+## [Unreleased]
+
+### Added
+
+- TUI: welcome screen on an empty chat — the aether logo (ascending triangle
+  + `aether` wordmark) centered in the transcript with a
+  `aether — plan · build · route` tagline and a muted hint line
+  (`type a message to start · / for commands · ctrl+P for model`), so the
+  first thing users see is the brand mark instead of an empty box.
+
+### Changed
+
+- TUI: palette semantics unified — one accent concept across the app: green
+  `#22c55e` is the brand accent (header brand, selected tab, active stage),
+  indigo `#818cf8` is the AI/agent color (ai labels, route panel, logo
+  base), sky `#38bdf8` is info/titles, slate is borders/muted. `chrome.rs`
+  no longer duplicates a conflicting indigo "accent" for the selected tab
+  (now bold green + underlined).
+- TUI: chat status/input/usage rows now align with the transcript column —
+  the right usage/session sidebar is a full-height rail (opencode-style)
+  spanning the transcript + status + input + usage rows instead of ending at
+  the transcript, so the input box and usage bar share the transcript's
+  left/right edges (footer stays full-width).
+- TUI: header right group (model/provider/version/sessions) truncates
+  gracefully with `…` on narrow terminals instead of being hard-clipped.
+- TUI: agent panels show their live phase in the panel header
+  (`PLAN · planning` / `BUILD · building` / `ROUTE · routing`) in the
+  panel's role color, so the active stage is visible at a glance.
+- TUI: session list token counts use compact units (`1.2K in / 3.4K out`)
+  matching the sidebar, and long session titles truncate with `…`.
+- TUI: palette models, slash-command labels and the add-model value truncate
+  with `…` when they overflow; the chat input shows the tail of long typed
+  text (most recent chars) with a leading `…` instead of clipping the end.
+
 ## [0.3.0] — 2026-08-15
 
 ### Security

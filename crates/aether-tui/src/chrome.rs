@@ -4,23 +4,24 @@
 //! no terminal access, so everything here is unit-testable in isolation. The
 //! widgets in `lib.rs` consume these lines directly.
 //!
-//! Palette (Modern Dark, from the ui-ux-pro-max design system):
-//! - brand  → green   `#22c55e`
+//! Palette (Modern Dark, from the ui-ux-pro-max design system). Semantics
+//! match `theme` in `lib.rs` — one accent concept across the app:
+//! - accent → green   `#22c55e` (brand — the single accent)
 //! - screen → cyan    `#38bdf8`
 //! - dim    → slate   `#64748b`
-//! - accent → indigo  `#818cf8`
+//! - ai     → indigo  `#818cf8` (AI/agent)
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-/// Brand green.
-const GREEN: Color = Color::Rgb(34, 197, 94);
+/// Brand green — the single accent (matches `theme::ACCENT` in lib.rs).
+const ACCENT: Color = Color::Rgb(34, 197, 94);
 /// Screen cyan.
 const CYAN: Color = Color::Rgb(56, 189, 248);
 /// Muted slate for secondary text.
 const DIM: Color = Color::Rgb(100, 116, 139);
-/// Indigo accent for the selected tab.
-const ACCENT: Color = Color::Rgb(129, 140, 248);
+/// AI/agent indigo (matches `theme::AI` in lib.rs).
+const AI: Color = Color::Rgb(129, 140, 248);
 
 /// Everything the header bar needs to render, gathered in one place.
 #[derive(Clone, Debug, Default)]
@@ -49,7 +50,7 @@ pub struct HeaderData<'a> {
 pub fn render_header(data: &HeaderData, total_width: u16) -> Line<'static> {
     let brand = Span::styled(
         data.brand.to_string(),
-        Style::new().fg(GREEN).add_modifier(Modifier::BOLD),
+        Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
     );
     let screen = Span::styled(format!(" · {}", data.screen), Style::new().fg(CYAN));
     let model = Span::styled(
@@ -69,20 +70,28 @@ pub fn render_header(data: &HeaderData, total_width: u16) -> Line<'static> {
         + sessions.content.chars().count();
 
     let mut spans: Vec<Span<'static>> = vec![brand, screen];
-    let pad = (total_width as usize).saturating_sub(left_width + right_width);
-    if pad > 0 {
-        spans.push(Span::raw(" ".repeat(pad)));
+    let pad = (total_width as usize).saturating_sub(left_width);
+    if right_width <= pad {
+        spans.push(Span::raw(" ".repeat(pad - right_width)));
+        spans.extend([model, version, sessions]);
+    } else if pad > 0 {
+        // The right group doesn't fit: truncate it gracefully with a
+        // trailing `…` instead of letting the terminal hard-clip it.
+        let right_text = format!("{}{}{}", model.content, version.content, sessions.content);
+        spans.push(Span::styled(
+            truncate(&right_text, pad.saturating_sub(1)),
+            Style::new().fg(DIM),
+        ));
     }
-    spans.extend([model, version, sessions]);
     Line::from(spans)
 }
 
 /// Render a tab bar from `(label, selected)` tuples.
 ///
-/// The selected tab is drawn as `▍{label}` in bold indigo; unselected tabs are
-/// ` {label}` in dim slate. Tabs are joined with a single space and the whole
-/// line is padded with trailing spaces out to `total_width` (a floor, never a
-/// truncation point).
+/// The selected tab is drawn as `▍{label}` in bold underlined brand green;
+/// unselected tabs are ` {label}` in dim slate. Tabs are joined with a single
+/// space and the whole line is padded with trailing spaces out to
+/// `total_width` (a floor, never a truncation point).
 pub fn render_tabs(tabs: &[(&'static str, bool)], total_width: u16) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut width = 0usize;
@@ -97,7 +106,9 @@ pub fn render_tabs(tabs: &[(&'static str, bool)], total_width: u16) -> Line<'sta
             width += text.chars().count();
             spans.push(Span::styled(
                 text,
-                Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::new()
+                    .fg(ACCENT)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             ));
         } else {
             let text = format!(" {label}");
@@ -165,9 +176,9 @@ pub fn render_logo() -> Vec<Line<'static>> {
     let mut out = Vec::with_capacity(LOGO.len() + 1);
     for (i, row) in LOGO.iter().enumerate() {
         let color = if i == 0 {
-            GREEN
-        } else if i == LOGO.len() - 1 {
             ACCENT
+        } else if i == LOGO.len() - 1 {
+            AI
         } else {
             CYAN
         };
@@ -175,7 +186,7 @@ pub fn render_logo() -> Vec<Line<'static>> {
     }
     out.push(Line::from(Span::styled(
         "aether",
-        Style::new().fg(GREEN).add_modifier(Modifier::BOLD),
+        Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
     )));
     out
 }
@@ -273,6 +284,48 @@ mod tests {
     }
 
     #[test]
+    fn header_truncates_right_group_on_narrow_width() {
+        let line = render_header(&sample_data(), 30);
+        let text = line.to_string();
+        assert!(text.contains("aetherdz"));
+        assert!(
+            text.ends_with('…'),
+            "the right group must end with an ellipsis, got: {text:?}"
+        );
+        assert!(
+            line.width() <= 30,
+            "a truncated header must fit the requested width, got {}",
+            line.width()
+        );
+    }
+
+    #[test]
+    fn header_omits_right_group_when_no_room() {
+        let line = render_header(&sample_data(), 10);
+        let text = line.to_string();
+        assert!(text.contains("aetherdz"));
+        assert!(
+            !text.contains("gpt-4o-mini"),
+            "the right group must be omitted when it cannot fit, got: {text:?}"
+        );
+    }
+
+    #[test]
+    fn selected_tab_is_underlined() {
+        let tabs: [(&'static str, bool); 2] = [("chat", true), ("sessions", false)];
+        let line = render_tabs(&tabs, 40);
+        let selected = line
+            .spans
+            .iter()
+            .find(|s| s.content.as_ref() == "▍chat")
+            .expect("selected tab must render with the ▍ glyph");
+        assert!(
+            selected.style.add_modifier.contains(Modifier::UNDERLINED),
+            "the selected tab must be underlined"
+        );
+    }
+
+    #[test]
     fn total_width_is_a_floor_not_a_truncation() {
         let line = render_header(&sample_data(), 4);
         assert!(line.width() >= 4);
@@ -292,8 +345,8 @@ mod tests {
         let lines = render_logo();
         let apex = &lines[0].spans[0].style.fg;
         let base = &lines[LOGO.len() - 1].spans[0].style.fg;
-        assert_eq!(*apex, Some(GREEN));
-        assert_eq!(*base, Some(ACCENT));
+        assert_eq!(*apex, Some(ACCENT));
+        assert_eq!(*base, Some(AI));
         assert!(
             lines[lines.len() - 1].spans[0]
                 .style
