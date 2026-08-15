@@ -211,6 +211,37 @@ enum ProcessingStatus {
 /// Braille spinner frames; index with `frame % SPINNER.len()`.
 const SPINNER: [char; 8] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
 
+/// Redraw tick: the event loop polls input with this timeout and redraws on
+/// every iteration, so the spinner animates while the model is thinking.
+const TICK_MS: u64 = 100;
+
+/// Pick the spinner frame for animation tick `frame` (wraps around).
+fn spinner_frame(frame: u32) -> char {
+    SPINNER[(frame as usize) % SPINNER.len()]
+}
+
+/// Status line above the chat input: spinner + state label while processing,
+/// `ready` when idle. Pure — unit-testable without a terminal.
+fn status_line(processing: ProcessingStatus, frame: u32) -> Line<'static> {
+    match processing {
+        ProcessingStatus::Idle => Line::from(Span::styled("ready", theme::muted())),
+        ProcessingStatus::Thinking => {
+            let spinner = spinner_frame(frame);
+            Line::from(Span::styled(
+                format!("{spinner} thinking…"),
+                theme::accent(),
+            ))
+        }
+        ProcessingStatus::Streaming(n) => {
+            let spinner = spinner_frame(frame);
+            Line::from(Span::styled(
+                format!("{spinner} streaming · {n} chunks"),
+                theme::accent(),
+            ))
+        }
+    }
+}
+
 /// The full ratatui application state.
 pub struct RatatuiTui {
     screen: Screen,
@@ -431,6 +462,10 @@ impl RatatuiTui {
     /// Queue one user turn: show the message immediately, spawn a background
     /// streaming task, and return — the draw loop keeps running.
     fn start_turn(&mut self, question: String, model: &str) -> Result<(), TuiError> {
+        // Flip to Thinking before any fallible I/O or spawn: the very next
+        // draw (within the ~100 ms tick) shows the spinner, even when the
+        // first streamed chunk is seconds away.
+        self.processing = ProcessingStatus::Thinking;
         self.chat.push(ChatRow {
             role: "user".to_string(),
             content: question.clone(),
@@ -465,7 +500,6 @@ impl RatatuiTui {
             buffer: String::new(),
             usage: None,
         });
-        self.processing = ProcessingStatus::Thinking;
         let request = ChatRequest {
             model: model.to_string(),
             messages: history,
@@ -738,9 +772,7 @@ impl RatatuiTui {
                 delete_word(&mut self.input);
                 KeyAction::Continue
             }
-            KeyCode::Char(c)
-                if self.stream.is_none() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.input.push(c);
                 KeyAction::Continue
             }
@@ -922,6 +954,9 @@ impl RatatuiTui {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
+        // Advance the spinner animation every frame; the event loop redraws
+        // on a ~100 ms tick, so the spinner stays live while thinking.
+        self.frame = self.frame.wrapping_add(1);
         // Every frame reflects the latest screen + session, so one call here
         // covers all transitions (Tab cycling, Enter/Esc, slash commands, ...).
         self.update_title();
@@ -1081,7 +1116,7 @@ impl RatatuiTui {
             .collect();
         if let Some(stream) = &self.stream {
             let tail = stream.buffer.as_str();
-            let spinner = SPINNER[(self.frame as usize) % SPINNER.len()];
+            let spinner = spinner_frame(self.frame);
             rows.push(Line::from(vec![
                 Span::styled("ai  ", theme::ai()),
                 Span::styled(format!("{spinner} "), theme::accent()),
@@ -1124,24 +1159,14 @@ impl RatatuiTui {
                 )),
             ])
         } else {
-            Line::from(match self.processing {
-                ProcessingStatus::Idle => Span::styled("ready", theme::muted()),
-                ProcessingStatus::Thinking => Span::styled("thinking…", theme::accent()),
-                ProcessingStatus::Streaming(n) => {
-                    Span::styled(format!("streaming · {n} chunks"), theme::accent())
-                }
-            })
+            status_line(self.processing, self.frame)
         };
         frame.render_widget(Paragraph::new(status), status_area);
 
-        let input_widget = Paragraph::new(if self.stream.is_some() {
-            Line::from(Span::styled("streaming…", theme::muted()))
-        } else {
-            Line::from(vec![
-                Span::styled("> ", theme::accent()),
-                Span::raw(self.input.as_str()),
-            ])
-        })
+        let input_widget = Paragraph::new(Line::from(vec![
+            Span::styled("> ", theme::accent()),
+            Span::raw(self.input.as_str()),
+        ]))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -1550,7 +1575,7 @@ impl RatatuiTui {
                 .draw(|frame| self.draw(frame))
                 .map_err(|e| TuiError::Render(e.to_string()))?;
 
-            if event::poll(Duration::from_millis(100))
+            if event::poll(Duration::from_millis(TICK_MS))
                 .map_err(|e| TuiError::Event(e.to_string()))?
             {
                 let event = event::read().map_err(|e| TuiError::Event(e.to_string()))?;
@@ -2379,5 +2404,127 @@ mod tests {
     fn update_title_is_best_effort_and_never_panics() {
         let app = RatatuiTui::default();
         app.update_title(); // writes OSC to captured test stdout; must not panic
+    }
+
+    #[test]
+    fn spinner_frame_wraps_and_animates() {
+        assert_eq!(spinner_frame(0), SPINNER[0]);
+        assert_eq!(spinner_frame(1), SPINNER[1]);
+        assert_eq!(spinner_frame(SPINNER.len() as u32), SPINNER[0]); // wraps
+        assert_eq!(spinner_frame(SPINNER.len() as u32 + 2), SPINNER[2]);
+        assert_ne!(spinner_frame(3), spinner_frame(4)); // consecutive ticks differ
+        assert!(SPINNER.contains(&spinner_frame(42)));
+    }
+
+    #[test]
+    fn status_line_thinking_renders_spinner_and_label() {
+        let line = status_line(ProcessingStatus::Thinking, 0);
+        let text = line.to_string();
+        assert!(
+            text.contains(spinner_frame(0)),
+            "thinking line must show the spinner, got {text:?}"
+        );
+        assert!(
+            text.contains("thinking…"),
+            "thinking line must show the label, got {text:?}"
+        );
+        let next = status_line(ProcessingStatus::Thinking, 1).to_string();
+        assert_ne!(text, next, "spinner must animate across ticks");
+    }
+
+    #[test]
+    fn status_line_streaming_renders_spinner_and_count() {
+        let line = status_line(ProcessingStatus::Streaming(3), 2);
+        let text = line.to_string();
+        assert!(
+            text.contains(spinner_frame(2)),
+            "streaming line must show the spinner, got {text:?}"
+        );
+        assert!(
+            text.contains("streaming · 3 chunks"),
+            "streaming line must show the chunk count, got {text:?}"
+        );
+    }
+
+    #[test]
+    fn status_line_idle_is_ready() {
+        assert_eq!(status_line(ProcessingStatus::Idle, 7).to_string(), "ready");
+    }
+
+    #[test]
+    fn start_turn_sets_thinking_immediately() {
+        let _g = aether_core::testutil::lock_env();
+        isolate("think-now");
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            app.start_turn("hello".to_string(), "some-model")
+                .expect("start_turn must succeed with the default config");
+        });
+        assert!(
+            matches!(app.processing, ProcessingStatus::Thinking),
+            "processing must be Thinking the moment start_turn returns, before any stream event"
+        );
+        assert!(
+            app.stream.is_some(),
+            "stream channel must be open while thinking"
+        );
+    }
+
+    #[test]
+    fn typing_appends_while_processing_and_enter_stays_gated() {
+        for processing in [ProcessingStatus::Thinking, ProcessingStatus::Streaming(1)] {
+            let (_tx, rx) = std::sync::mpsc::channel::<StreamEvent>();
+            let mut app = RatatuiTui {
+                screen: Screen::Chat,
+                processing,
+                stream: Some(ChatStream {
+                    rx,
+                    buffer: String::new(),
+                    usage: None,
+                }),
+                ..Default::default()
+            };
+            let _ = app.on_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+            let _ = app.on_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+            assert_eq!(app.input, "hi", "typing must append while {processing:?}");
+            let _ = app.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+            assert_eq!(app.input, "h", "backspace must work while {processing:?}");
+            let action = app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            assert_eq!(
+                action,
+                KeyAction::Continue,
+                "Enter must stay gated while {processing:?}"
+            );
+            assert_eq!(app.input, "h", "gated Enter must not clear the input");
+        }
+    }
+
+    #[test]
+    fn draw_advances_animation_frame_per_tick() {
+        use ratatui::backend::TestBackend;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let first = app.frame;
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        assert_eq!(
+            app.frame,
+            first + 1,
+            "each redraw tick must advance the spinner frame"
+        );
+        assert_ne!(
+            spinner_frame(first),
+            spinner_frame(first + 1),
+            "consecutive ticks must show different spinner frames"
+        );
     }
 }

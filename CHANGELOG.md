@@ -17,6 +17,13 @@ minors may still break surface APIs).
 
 ### Changed
 
+- TUI: thinking state is visible immediately — the status line shows an
+  animated braille spinner (`⠋ thinking…` / `⠋ streaming · n chunks`) that
+  advances on every ~100 ms redraw tick, so the UI never looks frozen while
+  waiting for the first streamed chunk.
+- TUI: chat input stays editable while a reply is streaming — typed
+  characters append to the input box during thinking/streaming (Enter is
+  still gated until the reply finishes).
 - TUI: chat input editing matches opencode — ctrl+Backspace / ctrl+W
   delete exactly one previous word (whitespace-delimited, word by word on
   repeat), plain Backspace still deletes a single char.
