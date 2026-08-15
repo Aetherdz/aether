@@ -9,6 +9,11 @@ minors may still break surface APIs).
 
 ### Added
 
+- TUI: live agent-pattern badge in the chat status line — while an agent
+  run is active the status area shows `plan -> build -> route` with the
+  current stage highlighted (accent) and the other two muted, updating in
+  real time as `AgentPhase` events arrive (the chat now drains the same
+  observer channel as the Agent screen via a shared `drain_agent_events`).
 - TUI: interactive model picker — the ctrl+P palette (also reachable via
   `/model`) now lists the provider's static models plus every custom model
   from `config.json`, highlights the active model, wraps around with j/k,

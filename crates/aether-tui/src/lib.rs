@@ -273,6 +273,34 @@ fn status_line(processing: ProcessingStatus, frame: u32) -> Line<'static> {
     }
 }
 
+/// Live `plan -> build -> route` badge for the chat status line while an
+/// agent run is active: the current stage is highlighted in accent, the
+/// other two are muted. Pure — unit-testable without a terminal.
+fn agent_badge(phase: agent_screen::ScreenPhase) -> Line<'static> {
+    let active = match phase {
+        agent_screen::ScreenPhase::Planning | agent_screen::ScreenPhase::PlanReady => 0,
+        agent_screen::ScreenPhase::BuildStarted
+        | agent_screen::ScreenPhase::ToolCalled
+        | agent_screen::ScreenPhase::BuildFinished => 1,
+        agent_screen::ScreenPhase::Routing | agent_screen::ScreenPhase::Routed => 2,
+        agent_screen::ScreenPhase::Idle | agent_screen::ScreenPhase::Finished => usize::MAX,
+    };
+    let stages = ["plan", "build", "route"];
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (i, stage) in stages.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" -> ", theme::muted()));
+        }
+        let style = if i == active {
+            theme::accent()
+        } else {
+            theme::muted()
+        };
+        spans.push(Span::styled(*stage, style));
+    }
+    Line::from(spans)
+}
+
 /// The full ratatui application state.
 pub struct RatatuiTui {
     screen: Screen,
@@ -645,6 +673,17 @@ impl RatatuiTui {
                     self.processing = ProcessingStatus::Idle;
                     self.last_error = Some(TuiError::Provider(e));
                 }
+            }
+        }
+    }
+
+    /// Fold any pending AgentPhase events into `agent_state`. Called on
+    /// every draw of both the Chat and Agent screens, so both stay live
+    /// from the same observer channel.
+    fn drain_agent_events(&mut self) {
+        if let Some(rx) = &self.agent_rx {
+            while let Ok(phase) = rx.try_recv() {
+                self.agent_state.apply(phase);
             }
         }
     }
@@ -1271,6 +1310,7 @@ impl RatatuiTui {
     }
 
     fn draw_chat(&mut self, frame: &mut Frame, body: Rect) {
+        self.drain_agent_events();
         let vertical = Layout::vertical([
             Constraint::Min(0),
             Constraint::Length(1),
@@ -1338,6 +1378,12 @@ impl RatatuiTui {
                     err.to_string().lines().next().unwrap_or_default()
                 )),
             ])
+        } else if self.agent_rx.is_some() {
+            let mut line = agent_badge(self.agent_state.phase);
+            line.spans.push(Span::raw("   "));
+            line.spans
+                .extend(status_line(self.processing, self.frame).spans);
+            line
         } else {
             status_line(self.processing, self.frame)
         };
@@ -1528,11 +1574,7 @@ impl RatatuiTui {
     }
 
     fn draw_agent(&mut self, frame: &mut Frame, body: Rect) {
-        if let Some(rx) = &self.agent_rx {
-            while let Ok(phase) = rx.try_recv() {
-                self.agent_state.apply(phase);
-            }
-        }
+        self.drain_agent_events();
         let vertical = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]);
         let [panel_area, footer_area] = vertical.areas(body);
         let horizontal = Layout::horizontal([
@@ -1919,6 +1961,28 @@ mod tests {
         for c in text.chars() {
             let _ = app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
         }
+    }
+
+    /// Concatenate every cell symbol of a drawn buffer (assert on rendered
+    /// text without a terminal).
+    fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
+        let mut text = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                if let Some(cell) = buffer.cell((x, y)) {
+                    text.push_str(cell.symbol());
+                }
+            }
+        }
+        text
+    }
+
+    /// Foreground color of the badge span whose content is exactly `word`.
+    fn badge_fg(line: &Line<'static>, word: &str) -> Option<Color> {
+        line.spans
+            .iter()
+            .find(|s| s.content.as_ref() == word)
+            .and_then(|s| s.style.fg)
     }
 
     #[test]
@@ -3178,5 +3242,175 @@ mod tests {
         assert_eq!(provider_name_from_base_url("  https://x.io  "), "x.io");
         assert_eq!(provider_name_from_base_url(""), "custom");
         assert_eq!(provider_name_from_base_url("///"), "custom");
+    }
+
+    #[test]
+    fn agent_badge_shows_all_stages_with_plan_highlighted() {
+        let line = agent_badge(agent_screen::ScreenPhase::Planning);
+        assert_eq!(line.to_string(), "plan -> build -> route");
+        assert_eq!(badge_fg(&line, "plan"), Some(theme::ACCENT));
+        assert_eq!(badge_fg(&line, "build"), Some(theme::MUTED));
+        assert_eq!(badge_fg(&line, "route"), Some(theme::MUTED));
+    }
+
+    #[test]
+    fn agent_badge_highlight_moves_through_stages() {
+        let plan = agent_badge(agent_screen::ScreenPhase::PlanReady);
+        assert_eq!(badge_fg(&plan, "plan"), Some(theme::ACCENT));
+        let build = agent_badge(agent_screen::ScreenPhase::BuildStarted);
+        assert_eq!(badge_fg(&build, "plan"), Some(theme::MUTED));
+        assert_eq!(badge_fg(&build, "build"), Some(theme::ACCENT));
+        for phase in [
+            agent_screen::ScreenPhase::ToolCalled,
+            agent_screen::ScreenPhase::BuildFinished,
+        ] {
+            let line = agent_badge(phase);
+            assert_eq!(
+                badge_fg(&line, "build"),
+                Some(theme::ACCENT),
+                "{phase:?} must highlight build"
+            );
+        }
+        for phase in [
+            agent_screen::ScreenPhase::Routing,
+            agent_screen::ScreenPhase::Routed,
+        ] {
+            let line = agent_badge(phase);
+            assert_eq!(
+                badge_fg(&line, "route"),
+                Some(theme::ACCENT),
+                "{phase:?} must highlight route"
+            );
+        }
+        assert_ne!(
+            build.spans, plan.spans,
+            "the highlight must move between stages"
+        );
+    }
+
+    #[test]
+    fn agent_badge_idle_and_finished_are_all_muted() {
+        for phase in [
+            agent_screen::ScreenPhase::Idle,
+            agent_screen::ScreenPhase::Finished,
+        ] {
+            let line = agent_badge(phase);
+            assert_eq!(line.to_string(), "plan -> build -> route");
+            for word in ["plan", "build", "route"] {
+                assert_eq!(
+                    badge_fg(&line, word),
+                    Some(theme::MUTED),
+                    "{phase:?}: {word} must be muted"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn drain_agent_events_folds_phases_into_agent_state() {
+        let (tx, rx) = std::sync::mpsc::channel::<aether_agent::AgentPhase>();
+        let mut app = RatatuiTui {
+            agent_rx: Some(rx),
+            ..Default::default()
+        };
+        tx.send(aether_agent::AgentPhase::BuildStarted { iteration: 2 })
+            .unwrap();
+        app.drain_agent_events();
+        assert_eq!(
+            app.agent_state.phase,
+            agent_screen::ScreenPhase::BuildStarted
+        );
+        assert_eq!(app.agent_state.current_iteration, 2);
+
+        tx.send(aether_agent::AgentPhase::Routing { iteration: 2 })
+            .unwrap();
+        app.drain_agent_events();
+        assert_eq!(app.agent_state.phase, agent_screen::ScreenPhase::Routing);
+        assert_eq!(app.agent_state.current_iteration, 2);
+    }
+
+    #[test]
+    fn draw_chat_shows_live_agent_badge_when_agent_runs() {
+        use ratatui::backend::TestBackend;
+
+        let (tx, rx) = std::sync::mpsc::channel::<aether_agent::AgentPhase>();
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            agent_rx: Some(rx),
+            agent_state: agent_screen::AgentScreenState {
+                phase: agent_screen::ScreenPhase::BuildStarted,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            text.contains("plan -> build -> route"),
+            "chat status must show the badge while an agent runs, got: {text:?}"
+        );
+        assert!(
+            text.contains("ready"),
+            "the normal status text must follow the badge, got: {text:?}"
+        );
+
+        // A phase arriving on the channel updates the badge on the next draw.
+        tx.send(aether_agent::AgentPhase::Routing { iteration: 1 })
+            .unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        assert_eq!(
+            app.agent_state.phase,
+            agent_screen::ScreenPhase::Routing,
+            "draw_chat must drain agent events so the badge stays live"
+        );
+    }
+
+    #[test]
+    fn draw_chat_without_agent_has_no_pattern_badge() {
+        use ratatui::backend::TestBackend;
+
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            !text.contains("plan -> build -> route"),
+            "no agent run must mean no pattern badge, got: {text:?}"
+        );
+        assert!(text.contains("ready"));
+    }
+
+    #[test]
+    fn draw_agent_updates_phase_via_shared_drain() {
+        use ratatui::backend::TestBackend;
+
+        let (tx, rx) = std::sync::mpsc::channel::<aether_agent::AgentPhase>();
+        let mut app = RatatuiTui {
+            screen: Screen::Agent,
+            agent_rx: Some(rx),
+            ..Default::default()
+        };
+        tx.send(aether_agent::AgentPhase::BuildFinished {
+            iteration: 1,
+            tool_calls: 3,
+            modified: false,
+            summary: "round done".to_string(),
+        })
+        .unwrap();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        assert_eq!(
+            app.agent_state.phase,
+            agent_screen::ScreenPhase::BuildFinished,
+            "the Agent screen must keep updating via the shared drain"
+        );
+        assert_eq!(app.agent_state.total_tool_calls, 3);
     }
 }
