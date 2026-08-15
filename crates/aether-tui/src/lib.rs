@@ -1910,7 +1910,11 @@ impl RatatuiTui {
 impl Tui for RatatuiTui {
     fn run(&mut self) -> Result<(), TuiError> {
         let mut terminal = ratatui::init();
+        // Best-effort: capture the pre-app title so it can be restored on
+        // exit; a non-responding terminal must never block startup.
+        let original_title = capture_original_title(TITLE_QUERY_TIMEOUT);
         if let Err(e) = crossterm::execute!(std::io::stdout(), EnableMouseCapture) {
+            restore_title(original_title.as_deref());
             ratatui::restore();
             return Err(TuiError::Terminal(e.to_string()));
         }
@@ -1921,6 +1925,7 @@ impl Tui for RatatuiTui {
             .and_then(|rt| rt.block_on(self.event_loop(&mut terminal)));
         let _ = crossterm::execute!(std::io::stdout(), DisableMouseCapture);
         ratatui::restore();
+        restore_title(original_title.as_deref());
         result
     }
 }
@@ -2023,6 +2028,97 @@ fn truncate_title(title: &str, max: usize) -> String {
     let mut out: String = title.chars().take(max.saturating_sub(1)).collect();
     out.push('…');
     out
+}
+
+/// How long to wait for the terminal's reply to the title query before
+/// giving up and proceeding without a title to restore.
+const TITLE_QUERY_TIMEOUT: Duration = Duration::from_millis(120);
+/// Upper bound on the title reply we'll buffer (guards against a chatty
+/// terminal streaming garbage back after the query).
+const TITLE_REPLY_MAX_BYTES: usize = 4096;
+
+/// Best-effort capture of the terminal's title before the app overwrites it,
+/// so `run()` can restore the original on exit. Writes the XTerm title query
+/// (`\x1B[21t`), flushes, reads the reply on a background thread and waits at
+/// most `timeout` for it. A non-tty stdout, a terminal that doesn't answer,
+/// or an unparseable reply all yield `None` without blocking the main path.
+/// The reader thread may keep blocking on stdin afterwards, which is
+/// acceptable for a one-off at startup.
+fn capture_original_title(timeout: Duration) -> Option<String> {
+    use std::io::{IsTerminal, Read, Write};
+
+    if !std::io::stdout().is_terminal() {
+        return None;
+    }
+    let mut stdout = std::io::stdout();
+    if stdout.write_all(b"\x1B[21t").is_err() || stdout.flush().is_err() {
+        return None;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut stdin = std::io::stdin().lock();
+        let mut buf = Vec::new();
+        let mut byte = [0u8; 1];
+        while buf.len() < TITLE_REPLY_MAX_BYTES {
+            match stdin.read(&mut byte) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    buf.push(byte[0]);
+                    if parse_title_response(&buf).is_some() {
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = tx.send(buf);
+    });
+    rx.recv_timeout(timeout)
+        .ok()
+        .and_then(|buf| parse_title_response(&buf))
+}
+
+/// Best-effort restore of the terminal title captured at startup. A no-op
+/// when capture yielded `None`; errors are swallowed so a terminal that
+/// ignores `SetTitle` never breaks exit.
+fn restore_title(original: Option<&str>) {
+    if let Some(title) = original {
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(title));
+    }
+}
+
+/// Locate `needle` in `haystack`, returning its byte offset.
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// Parse a terminal's reply to the XTerm title query (`\x1B[21t`) into the
+/// window title string. XTerm answers with `\x1B]l<title>\x1B\\`; some
+/// terminals use the OSC 0 (`\x1B]0;<title>\x07`, icon name) or OSC 2
+/// (`\x1B]2;<title>\x07`, window title) forms instead. The reply may carry
+/// stray bytes around it, so each variant is located anywhere in `raw`. An
+/// empty title (or no recognizable reply) yields `None`.
+fn parse_title_response(raw: &[u8]) -> Option<String> {
+    const VARIANTS: &[(&[u8], &[u8])] = &[
+        (b"\x1B]l", b"\x1B\\"), // XTerm title reply (ST terminator)
+        (b"\x1B]0;", b"\x07"),  // OSC 0 icon name
+        (b"\x1B]2;", b"\x07"),  // OSC 2 window title
+    ];
+    for (open, close) in VARIANTS {
+        let Some(start) = find_bytes(raw, open) else {
+            continue;
+        };
+        let payload = &raw[start + open.len()..];
+        let Some(end) = find_bytes(payload, close) else {
+            continue;
+        };
+        let title = String::from_utf8_lossy(&payload[..end]).trim().to_string();
+        if !title.is_empty() {
+            return Some(title);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -3648,5 +3744,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn parse_title_response_xt_variant() {
+        assert_eq!(
+            parse_title_response(b"\x1B]lmy-shell\x1B\\"),
+            Some("my-shell".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_title_response_osc0_variant() {
+        assert_eq!(
+            parse_title_response(b"\x1B]0;my-shell\x07"),
+            Some("my-shell".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_title_response_osc2_variant() {
+        assert_eq!(
+            parse_title_response(b"\x1B]2;my-shell\x07"),
+            Some("my-shell".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_title_response_empty_is_none() {
+        assert_eq!(parse_title_response(b"\x1B]l\x1B\\"), None);
+        assert_eq!(parse_title_response(b"\x1B]0;\x07"), None);
+        assert_eq!(parse_title_response(b"\x1B]2;\x07"), None);
+    }
+
+    #[test]
+    fn parse_title_response_no_reply_is_none() {
+        assert_eq!(parse_title_response(b""), None);
+        assert_eq!(parse_title_response(b"\x1B[21t"), None);
+        assert_eq!(parse_title_response(b"\x1B]0;"), None);
+        assert_eq!(parse_title_response(b"not a title reply"), None);
+    }
+
+    #[test]
+    fn parse_title_response_ignores_stray_bytes() {
+        assert_eq!(
+            parse_title_response(b"\x1B[?2026h\x1B]2;my-shell\x07\x1B[?2026l"),
+            Some("my-shell".to_string())
+        );
     }
 }

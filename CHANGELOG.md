@@ -39,6 +39,12 @@ minors may still break surface APIs).
 
 ### Changed
 
+- TUI: original terminal title is restored on exit — the app captures the
+  pre-existing title via the XTerm title query (`\x1B[21t`, parsed from
+  `\x1B]l…\x1B\\` / `\x1B]0;…\x07` / `\x1B]2;…\x07` replies) at startup and
+  re-applies it on every exit path, so the window/tab title returns to
+  whatever it was before the app started (best-effort: a terminal that
+  doesn't answer the query leaves the title untouched).
 - TUI: thinking state is visible immediately — the status line shows an
   animated braille spinner (`⠋ thinking…` / `⠋ streaming · n chunks`) that
   advances on every ~100 ms redraw tick, so the UI never looks frozen while
