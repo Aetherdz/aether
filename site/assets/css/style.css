@@ -97,7 +97,7 @@ img, svg { display: block; }
 
 a { color: var(--text-secondary); text-decoration: none; transition: color 150ms var(--ease-out); }
 a:hover { color: var(--text-primary); }
-a:focus-visible, button:focus-visible {
+a:focus-visible, button:focus-visible, summary:focus-visible {
   outline: 2px solid var(--text-primary);
   outline-offset: 2px;
   border-radius: 2px;
@@ -555,4 +555,260 @@ a:focus-visible, button:focus-visible {
   .terminal { animation: none; }
   .t-cursor { animation: none; visibility: hidden; }
   .feature-card, a, .copy-btn { transition: none; }
+}
+
+/* ============================================================
+   Install tabs (opencode.ai pattern — ARIA tablist)
+   ============================================================ */
+
+.install-tabs {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.install-tab {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out), border-color 150ms var(--ease-out);
+}
+.install-tab:hover { color: var(--text-primary); border-color: var(--text-primary); }
+.install-tab[aria-selected="true"] {
+  background: var(--text-primary);
+  color: var(--surface-primary);
+  border-color: var(--text-primary);
+}
+
+.install-panel { flex: 1; min-width: 0; display: flex; }
+.install-panel[hidden] { display: none; }
+.install-code { min-width: 0; }
+
+/* ============================================================
+   Platform download buttons (jcode.sh pattern)
+   ============================================================ */
+
+.platforms {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+}
+
+.platform-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-body-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-4);
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out);
+}
+.platform-btn:hover { border-color: var(--text-primary); background: var(--surface-secondary); }
+
+.platform-note {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+}
+
+/* ============================================================
+   Stats strip (opencode.ai / jcode.sh hard-numbers pattern)
+   ============================================================ */
+
+.stats {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 var(--space-6) var(--space-20);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-6);
+  margin: 0;
+}
+
+.stat {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--surface-secondary);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.stat-value {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 0 var(--space-2);
+}
+
+.stat-label {
+  margin: 0;
+  font-size: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+.stat-note {
+  margin: var(--space-4) 0 0;
+  text-align: center;
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+}
+
+/* ============================================================
+   FAQ accordion (opencode.ai pattern — native <details>)
+   ============================================================ */
+
+.faq {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 var(--space-6) var(--space-20);
+}
+
+.faq .overline { margin-bottom: var(--space-2); }
+
+.faq-list {
+  margin-top: var(--space-12);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.faq-item {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--surface-secondary);
+}
+
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+
+.faq-mark {
+  flex: none;
+  font-size: var(--text-h2);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-secondary);
+  transition: transform 200ms var(--ease-out);
+}
+.faq-item[open] .faq-mark { transform: rotate(45deg); }
+.faq-item[open] summary { border-bottom: 1px solid var(--border-subtle); }
+
+.faq-item p {
+  margin: 0;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  font-size: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+.faq-item a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ============================================================
+   Comparison table (jcode.sh pattern)
+   ============================================================ */
+
+.compare {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 var(--space-6) var(--space-20);
+}
+
+.compare .overline { margin-bottom: var(--space-2); }
+
+.table-wrap {
+  margin-top: var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body-sm);
+  background: var(--surface-primary);
+}
+
+.compare-table th,
+.compare-table td {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+
+.compare-table thead th {
+  font-size: var(--text-overline);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--surface-secondary);
+}
+
+.compare-table tbody tr:last-child th,
+.compare-table tbody tr:last-child td { border-bottom: none; }
+
+.compare-table tbody th {
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.compare-table td { color: var(--text-secondary); }
+.compare-table td strong { color: var(--text-primary); }
+
+.compare-note {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+}
+
+/* ============================================================
+   Responsive additions
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 480px) {
+  .stat-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   Reduced-motion additions
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .install-tab, .platform-btn, .faq-mark { transition: none; }
 }

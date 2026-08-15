@@ -6,6 +6,7 @@
 - Lazyweb: 0 queries (refs provided directly by user, live-fetched).
 - Imagen drafts: none — logo designed by hand as original SVG mark.
 - Skipped lanes: ui-ux-db CLI — palette dictated by the two named references plus explicit user direction to black & white.
+- 2026-08-15 template adoption: opencode.ai install tabs + FAQ accordion; jcode.sh platform buttons + stats strip + comparison table — all rendered in the existing monochrome tokens (no palette change, no new colors).
 
 ## 1. Atmosphere & Identity
 
@@ -195,3 +196,45 @@ Choose ONE and commit: **[tonal-shift + hairline borders]** — surfaces separat
 | Item | Location | Why accepted | Owner / Exit |
 |------|----------|--------------|--------------|
 | Code comment text (#999 on #FFF, 3.3:1) | quickstart steps | Non-essential annotation; below 4.5:1 AA but not load-bearing | Re-evaluate if comments become interactive |
+
+### Install Tabs (opencode.ai pattern)
+- **Structure**: `<div class="install-tabs" role="tablist">` → two `<button role="tab">` (curl / source) → `<div class="install-row">` containing two `<div role="tabpanel">` (each wrapping the mono `<code>`) + copy button → `<p class="install-meta" aria-live="polite">`.
+- **Variants**: curl (official installer, default), source (git clone + `cargo build --release`, requires Rust 1.97+).
+- **Spacing**: tabs 4px gap, 8px below; tab padding 4px 12px; row unchanged (12px 16px code padding).
+- **States**: default = paper bg + hairline border + secondary text; hover = ink border + ink text; active (`aria-selected="true"`) = **ink background, paper text** (19:1); focus ring 2px ink offset 2px.
+- **Accessibility**: full ARIA tabs pattern — `role=tablist/tab/tabpanel`, `aria-selected`, `aria-controls`, `aria-labelledby`, roving `tabindex` (0/-1), ArrowLeft/Right + Home/End rotation, click + focus. Meta line swaps per tab via `data-meta` (aria-live polite). Copy button copies the **active** tab's command.
+- **Motion**: color/border 150ms ease-out only.
+- **Layout**: centered cluster; panels `flex:1 min-width:0` so long source command scrolls horizontally, never breaks the row.
+
+### Platform Download Buttons (jcode.sh pattern)
+- **Structure**: `<div class="platforms">` → three `<a class="platform-btn">` (macOS / Linux / Windows) each with a 14px mono download-arrow glyph (SVG stroke, currentColor) + label.
+- **Variants**: single (all three link to `https://github.com/Aetherdz/aether/releases/latest`; per-arch binaries `aether-{linux,macos}-{x86_64,aarch64}` + `aether-windows-x86_64.exe` and `SHA256SUMS.txt` live there).
+- **Spacing**: 12px gap, 16px above, 12px below to note.
+- **States**: default hairline border + ink text; hover ink border + secondary bg; focus ring 2px ink.
+- **Accessibility**: real `<a>` links (not buttons) with `rel="noopener"`; glyph `aria-hidden`; label is text.
+- **Layout**: flex cluster, wraps on mobile.
+
+### Stat Strip (opencode.ai / jcode.sh hard-numbers pattern)
+- **Structure**: `<section class="stats">` → sr-only h2 → `<dl class="stat-grid">` of 4 `<div class="stat">` (dt value + dd label) → `<p class="stat-note">` honesty line.
+- **Variants**: single (4-up: 4.99 MB / ~112 ms / ~5 MB / 267).
+- **Spacing**: 24px gap; card padding 24px; note 16px below grid.
+- **States**: static (no hover — data, not interaction).
+- **Accessibility**: `<dl>` semantics (dt = value, dd = label); values ink on #F4F4F4 ≈ 18.6:1; labels #666 ≈ 5.7:1; note #999 = 3.3:1 non-essential annotation (accepted debt, see §8).
+- **Layout**: 4-col grid → 2-col @768px → 1-col @480px.
+
+### FAQ Accordion (opencode.ai pattern)
+- **Structure**: `<section class="faq">` → overline + section title → `<div class="faq-list">` of native `<details class="faq-item">` → `<summary>` (question span + mono "+" `<span class="faq-mark" aria-hidden="true">`) → `<p>` answer.
+- **Variants**: single (5 items: API key / privacy / runtime / file edits / license).
+- **Spacing**: 12px gap between items; summary padding 16px 24px; answer padding 16px 24px 24px.
+- **States**: closed = hairline border; open = hairline border + subtle bottom border under summary; marker rotates 45° (→ ×) on open, 200ms ease-out; focus ring 2px ink on summary.
+- **Accessibility**: native `<details>/<summary>` (keyboard + SR support for free); marker `aria-hidden`; answer links underlined ink.
+- **Motion**: transform-only marker rotation; disabled under reduced-motion.
+- **Layout**: stacked grid, full width.
+
+### Comparison Table (jcode.sh pattern)
+- **Structure**: `<section class="compare">` → overline + section title → `<div class="table-wrap">` → `<table class="compare-table">` (thead: — / Aether / Node-based agents; tbody: 7 rows) → `<p class="compare-note">` honesty footnote.
+- **Variants**: single (Runtime, Binary size, Startup, Agent loop, Sessions as files, MCP server, Telemetry).
+- **Spacing**: cell padding 12px 16px; hairline row borders; header row on #F4F4F4.
+- **States**: static.
+- **Accessibility**: `scope="col"` / `scope="row"`; Aether column values in ink `<strong>`; other column #666 (7.5:1); footnote #999 non-essential (accepted debt).
+- **Layout**: `overflow-x: auto` wrapper for mobile; row-header column `white-space: nowrap`.

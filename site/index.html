@@ -32,6 +32,7 @@
       <a href="#quickstart">Install</a>
       <a href="#features">Features</a>
       <a href="#terminal">Demo</a>
+      <a href="#faq">FAQ</a>
       <a href="https://github.com/Aetherdz/aether" rel="noopener">GitHub</a>
       <a class="nav-cta" href="#install">Get started</a>
     </div>
@@ -45,21 +46,68 @@
     <h1 id="hero-title">Talk to your codebase.<br>From the terminal.</h1>
     <p class="lead">Aether is a keyboard-first AI agent that lives in your shell. A TUI chat over your code, an MCP server for your tools, and gist or folder sync — in one native Rust binary. No Node runtime. No browser tab. No noise.</p>
     <div class="install" id="install">
+      <div class="install-tabs" role="tablist" aria-label="Install method">
+        <button class="install-tab" id="tab-curl" role="tab" aria-selected="true" aria-controls="panel-curl" type="button" data-meta="one native binary · no Rust toolchain · no Node runtime — MIT license">curl</button>
+        <button class="install-tab" id="tab-source" role="tab" aria-selected="false" aria-controls="panel-source" type="button" data-meta="requires Rust 1.97+ · builds from source — MIT license">source</button>
+      </div>
       <div class="install-row">
-        <code class="install-code" id="install-code">curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash</code>
+        <div class="install-panel" id="panel-curl" role="tabpanel" aria-labelledby="tab-curl">
+          <code class="install-code" id="install-code">curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash</code>
+        </div>
+        <div class="install-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source" hidden>
+          <code class="install-code">git clone https://github.com/Aetherdz/aether &amp;&amp; cd aether &amp;&amp; cargo build --release &amp;&amp; ./target/release/aether tui</code>
+        </div>
         <button class="copy-btn" id="copy-btn" type="button" aria-label="Copy install command">
           <svg class="icon icon-copy" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 5V3.5a1 1 0 0 0-1-1H3.5a1 1 0 0 0-1 1V10a1 1 0 0 0 1 1H5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
           <svg class="icon icon-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
-      <p class="install-meta" aria-live="polite">one native binary · no Rust toolchain · no Node runtime — MIT license</p>
+      <p class="install-meta" id="install-meta" aria-live="polite">one native binary · no Rust toolchain · no Node runtime — MIT license</p>
     </div>
+    <div class="platforms" aria-label="Download for your platform">
+      <a class="platform-btn" href="https://github.com/Aetherdz/aether/releases/latest" rel="noopener">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        macOS
+      </a>
+      <a class="platform-btn" href="https://github.com/Aetherdz/aether/releases/latest" rel="noopener">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Linux
+      </a>
+      <a class="platform-btn" href="https://github.com/Aetherdz/aether/releases/latest" rel="noopener">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Windows
+      </a>
+    </div>
+    <p class="platform-note">all builds + SHA256SUMS.txt on GitHub Releases</p>
     <ul class="badges" aria-label="Highlights">
       <li>100% Rust</li>
       <li>No Node runtime</li>
       <li>Token ledger</li>
       <li>MCP ready</li>
     </ul>
+  </section>
+
+  <section class="stats" id="stats" aria-labelledby="stats-title">
+    <h2 id="stats-title" class="sr-only">Measured performance</h2>
+    <dl class="stat-grid">
+      <div class="stat">
+        <dt class="stat-value">4.99 MB</dt>
+        <dd class="stat-label">single stripped binary</dd>
+      </div>
+      <div class="stat">
+        <dt class="stat-value">~112 ms</dt>
+        <dd class="stat-label">cold start</dd>
+      </div>
+      <div class="stat">
+        <dt class="stat-value">~5 MB</dt>
+        <dd class="stat-label">steady-state RSS</dd>
+      </div>
+      <div class="stat">
+        <dt class="stat-value">267</dt>
+        <dd class="stat-label">tests green in workspace</dd>
+      </div>
+    </dl>
+    <p class="stat-note">measured 2026-08-09 · 5-run median · benchmark/run.sh — reproducible in this repo</p>
   </section>
 
   <section class="terminal-wrap" id="terminal" aria-labelledby="terminal-title">
@@ -121,7 +169,7 @@
       <article class="feature-card">
         <p class="feature-label">agent</p>
         <h3>Live plan → build → route</h3>
-        <p>Run the three-model agent loop straight from the TUI. Three live panels show the planner, builder, and router as they work — plan cards, todo progress, and per-step verdicts update in real time.</p>
+        <p>Run the three-model agent loop straight from the TUI. Three live panels show the planner, builder, and router as they work — plan cards, todo progress, and per-step verdicts update in real time, with live counters on every panel.</p>
       </article>
       <article class="feature-card">
         <p class="feature-label">mcp</p>
@@ -144,11 +192,107 @@
         <p>Every request is counted. You always know what a session cost before you commit to it — no mystery usage bills.</p>
       </article>
       <article class="feature-card">
+        <p class="feature-label">rail</p>
+        <h3>Usage &amp; session rail</h3>
+        <p>A right-side rail tracks every session live: tokens in, tokens out, and total. The ledger is one glance away, never a surprise.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">welcome</p>
+        <h3>Welcome logo screen</h3>
+        <p>An empty chat opens on the logo screen with a blinking cursor — a clean start, no dead space, no blank panel.</p>
+      </article>
+      <article class="feature-card">
+        <p class="feature-label">shell</p>
+        <h3>Terminal title restore</h3>
+        <p>Aether restores your terminal title when you exit. No leftover state, no mess in your shell.</p>
+      </article>
+      <article class="feature-card">
         <p class="feature-label">open</p>
         <h3>MIT licensed</h3>
         <p>Public, auditable, and free. Fork it, vendor it, build on it — the crate boundary is the contract.</p>
       </article>
     </div>
+  </section>
+
+  <section class="faq" id="faq" aria-labelledby="faq-title">
+    <p class="overline">faq</p>
+    <h2 class="section-title" id="faq-title">Questions, answered</h2>
+    <div class="faq-list">
+      <details class="faq-item">
+        <summary><span class="faq-q">Do I need an API key?</span><span class="faq-mark" aria-hidden="true">+</span></summary>
+        <p>No. The free <strong>zen</strong> provider is built in and works out of the box — hosted by opencode.ai. Bring your own key or a local model anytime.</p>
+      </details>
+      <details class="faq-item">
+        <summary><span class="faq-q">Is my code sent anywhere?</span><span class="faq-mark" aria-hidden="true">+</span></summary>
+        <p>Honest answer: the free zen endpoint is hosted by opencode.ai and sees your conversation payload. Local models (Ollama, LM Studio) run fully offline. No telemetry, no accounts — see <a href="https://github.com/Aetherdz/aether/blob/main/docs/zen-privacy.md" rel="noopener">docs/zen-privacy.md</a>.</p>
+      </details>
+      <details class="faq-item">
+        <summary><span class="faq-q">Does it need Node or Python?</span><span class="faq-mark" aria-hidden="true">+</span></summary>
+        <p>No. One native Rust binary — no runtime, no interpreter, no 400 MB install. That is the whole point.</p>
+      </details>
+      <details class="faq-item">
+        <summary><span class="faq-q">Can it edit my files?</span><span class="faq-mark" aria-hidden="true">+</span></summary>
+        <p>Yes — via the agent loop with path-sandboxed tools and a command approval gate: every write shows a diff preview and waits for your y/N before touching disk.</p>
+      </details>
+      <details class="faq-item">
+        <summary><span class="faq-q">Is it open source?</span><span class="faq-mark" aria-hidden="true">+</span></summary>
+        <p>Yes — MIT licensed. Public, auditable, and free. Fork it, vendor it, build on it.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="compare" id="compare" aria-labelledby="compare-title">
+    <p class="overline">honest comparison</p>
+    <h2 class="section-title" id="compare-title">Aether vs. Node-based agents</h2>
+    <div class="table-wrap">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th scope="col">—</th>
+            <th scope="col">Aether</th>
+            <th scope="col">Node-based agents</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Runtime</th>
+            <td>One native Rust binary</td>
+            <td>Node + hundreds of MB of deps</td>
+          </tr>
+          <tr>
+            <th scope="row">Binary size</th>
+            <td><strong>4.99 MB</strong> — one stripped binary</td>
+            <td>hundreds of MB installed</td>
+          </tr>
+          <tr>
+            <th scope="row">Startup</th>
+            <td><strong>~112 ms</strong> cold start</td>
+            <td>1 s+ cold start per run</td>
+          </tr>
+          <tr>
+            <th scope="row">Agent loop</th>
+            <td>plan → build → route, 3 models, sandboxed tools</td>
+            <td>varies by tool</td>
+          </tr>
+          <tr>
+            <th scope="row">Sessions as files</th>
+            <td>Plain JSONL — grep it, script it, own it</td>
+            <td>Often bespoke databases</td>
+          </tr>
+          <tr>
+            <th scope="row">MCP server</th>
+            <td>Built in — stdio + Streamable HTTP</td>
+            <td>Requires separate config</td>
+          </tr>
+          <tr>
+            <th scope="row">Telemetry</th>
+            <td>None — verifiable</td>
+            <td>Varies</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="compare-note">Aether figures are measured in this repo (benchmark/run.sh, 5-run median, 2026-08-09). Node-based figures are vendor-published claims, not measured here. Coverage, not a superiority claim.</p>
   </section>
 
 </main>
@@ -169,6 +313,7 @@
     <nav class="footer-links" aria-label="Footer">
       <a href="#features">Features</a>
       <a href="#terminal">Demo</a>
+      <a href="#faq">FAQ</a>
       <a href="#install">Install</a>
     </nav>
     <div class="footer-links" aria-label="External">
@@ -181,10 +326,43 @@
 
 <script>
 (function () {
+  var CURL_CMD = 'curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash';
+  var SOURCE_CMD = 'git clone https://github.com/Aetherdz/aether && cd aether && cargo build --release && ./target/release/aether tui';
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.install-tab'));
+  var panels = Array.prototype.slice.call(document.querySelectorAll('.install-panel'));
+  var meta = document.getElementById('install-meta');
   var btn = document.getElementById('copy-btn');
-  var code = document.getElementById('install-code');
-  var text = 'curl -fsSL https://raw.githubusercontent.com/Aetherdz/aether/main/scripts/install.sh | bash';
   var row = btn.closest('.install-row');
+  var activeCmd = CURL_CMD;
+
+  function selectTab(tab) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+    });
+    panels.forEach(function (p) {
+      p.hidden = p.getAttribute('aria-labelledby') !== tab.id;
+    });
+    meta.textContent = tab.getAttribute('data-meta');
+    activeCmd = tab.id === 'tab-curl' ? CURL_CMD : SOURCE_CMD;
+  }
+
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener('click', function () { selectTab(tab); });
+    tab.addEventListener('keydown', function (e) {
+      var idx;
+      if (e.key === 'ArrowRight') { idx = (i + 1) % tabs.length; }
+      else if (e.key === 'ArrowLeft') { idx = (i - 1 + tabs.length) % tabs.length; }
+      else if (e.key === 'Home') { idx = 0; }
+      else if (e.key === 'End') { idx = tabs.length - 1; }
+      else { return; }
+      e.preventDefault();
+      selectTab(tabs[idx]);
+      tabs[idx].focus();
+    });
+  });
+
   btn.addEventListener('click', function () {
     function done() {
       row.classList.add('copied');
@@ -194,12 +372,9 @@
         btn.setAttribute('aria-label', 'Copy install command');
       }, 1200);
     }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); });
-    } else { fallback(); }
     function fallback() {
       var ta = document.createElement('textarea');
-      ta.value = text;
+      ta.value = activeCmd;
       ta.setAttribute('readonly', '');
       ta.style.position = 'absolute';
       ta.style.left = '-9999px';
@@ -208,6 +383,9 @@
       try { document.execCommand('copy'); done(); } catch (e) {}
       document.body.removeChild(ta);
     }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(activeCmd).then(done).catch(fallback);
+    } else { fallback(); }
   });
 })();
 </script>

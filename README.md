@@ -6,7 +6,11 @@
 
 <p align="center">
   <b>A terminal AI coding agent in one Rust binary.</b><br/>
-  Talk to your codebase from the shell — no Node runtime, no browser tab, no noise.
+  Talk to your codebase from the shell. No Node runtime, no browser tab, no noise.
+</p>
+
+<p align="center">
+  <code>one binary</code> · <code>4.99 MB</code> · <code>~112 ms cold start</code> · <code>no telemetry</code>
 </p>
 
 <p align="center">
@@ -14,23 +18,27 @@
   <a href="https://github.com/Aetherdz/aether/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Aetherdz/aether" alt="MIT license" /></a>
   <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey" alt="Cross-platform" /></a>
   <a href="https://github.com/Aetherdz/aether/actions/workflows/ci.yml"><img src="https://github.com/Aetherdz/aether/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-192%20passing-brightgreen" alt="192 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/tests-267%20passing-brightgreen" alt="267 tests passing" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/binary-4.99%20MB-black" alt="4.99 MB binary" /></a>
+  <a href="https://github.com/Aetherdz/aether"><img src="https://img.shields.io/badge/startup-~112%20ms-lightgrey" alt="~112 ms startup" /></a>
 </p>
 
 ---
 
-Aether is a **Rust port of [AETHER](https://github.com/Aetherdz/aethercode)** — the
+Aether is a **Rust port of [AETHER](https://github.com/Aetherdz/aethercode)**: the
 same UX, the same providers, the same session format, but compiled to a single
 static binary that talks to any OpenAI-compatible API. It started as a migration
 exercise and became a full agent: chat, sessions, sync, MCP, and a ratatui TUI.
 
 <p align="center">
   <img src="site/assets/img/demo.gif" width="800" alt="aether TUI v2 — session list, chat transcript, live plan → build → route agent screen" />
+  <br/>
+  <sub>v0.3.0+: welcome logo screen, right-hand usage/session rail, live plan/build/route badge, terminal title restore on exit</sub>
 </p>
 
 ## Install
 
-One command, verified checksum-first — downloads the prebuilt binary for your
+**One command, checksum-verified.** Downloads the prebuilt binary for your
 OS/arch from GitHub Releases, verifies its SHA-256, and installs it:
 
 ```sh
@@ -53,7 +61,10 @@ and exits early when already up to date (no re-download).
 | Windows | `aether-windows-x86_64.exe` | —                     |
 
 Every release ships `SHA256SUMS.txt`; the installer refuses to install on a
-mismatch. No Node, no Python, no package-manager hoops — one native binary.
+mismatch. No Node, no Python, no package-manager hoops. One native binary.
+
+Prefer to build from source? See [Building from source](#building-from-source)
+(requires Rust 1.97+).
 
 ## Why Aether?
 
@@ -97,6 +108,29 @@ tracks every row against source and lists the features Aether does **not**
 have yet (MCP client, git auto-commit, slash commands, watch mode, plugins,
 user-defined subagents) — the same honesty as the benchmarks.
 
+## Feature grid
+
+<table align="center">
+  <tr>
+    <td align="center"><b>One native binary</b><br/><sub>4.99 MB stripped, no Node, no Python</sub></td>
+    <td align="center"><b>3-model agent loop</b><br/><sub>plan → build → route on one task</sub></td>
+    <td align="center"><b>Sandboxed tools</b><br/><sub>path-sandboxed, 30 s timeout, approval gate</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><b>ratatui TUI</b><br/><sub>live agent panels, plan cards, token ledger</sub></td>
+    <td align="center"><b>MCP server</b><br/><sub>stdio + Streamable HTTP, built in</sub></td>
+    <td align="center"><b>Gist / folder sync</b><br/><sub>line-level merge with origin fingerprints</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><b>JSONL sessions</b><br/><sub>grep it, script it, own it</sub></td>
+    <td align="center"><b>Token ledger</b><br/><sub>know what every session costs</sub></td>
+    <td align="center"><b>Local models</b><br/><sub>Ollama / LM Studio, first-class</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3"><b>No telemetry.</b> No accounts, no tracking, no lock-in.</td>
+  </tr>
+</table>
+
 ## Quick start
 
 No Rust toolchain needed — install the prebuilt binary, checksum-verified:
@@ -111,9 +145,6 @@ aether ask "explain this repo in one paragraph"
 # 3. Or open the full TUI
 aether tui
 ```
-
-Prefer to build from source? See [Building from source](#building-from-source)
-(requires Rust 1.97+).
 
 > No API key required by default — **zen** is the built-in free provider.
 > Bring your own key anytime: `aether use anthropic/claude-sonnet-5`.
@@ -177,16 +208,16 @@ flagging the older one for review.
 `aether agent "task"` runs the loop that makes Aether a *coding agent*:
 three models cooperate on one task, each with its own role:
 
-1. **plan** — a planner reads the task and writes a step-by-step plan.
-2. **build** — a builder executes the plan using real tools: `read_file`,
+1. **plan**: a planner reads the task and writes a step-by-step plan.
+2. **build**: a builder executes the plan using real tools: `read_file`,
    `write_file`, `list_dir`, `run_command`, `search`. Every path is sandboxed
-   to the working directory — absolute paths, `..` escapes and NUL bytes are
+   to the working directory. Absolute paths, `..` escapes and NUL bytes are
    rejected before anything touches disk.
-3. **route** — a router watches the result and decides: keep going, revise
+3. **route**: a router watches the result and decides: keep going, revise
    the plan, or declare it done.
 
 **Command approval gate.** `write_file` shows a diff and asks before
-overwriting; `run_command` pauses before dangerous commands — destructive
+overwriting; `run_command` pauses before dangerous commands: destructive
 (`rm -rf` on absolute/home paths), system-level (`sudo`, `shutdown`,
 `mkfs`, …), remote-exec (`curl | sh`, `bash <(...)`), and publish actions
 (`npm publish`, `git push --force`, …). In an interactive terminal answer
@@ -208,34 +239,41 @@ aether agent "add a --dry-run flag to the sync command" \
 
 Tool calls work two ways: native `tool_calls` when the provider supports
 them, and a fenced-JSON fallback (`{"tool": "...", "args": {...}}` in the
-reply) otherwise — so the loop runs on any OpenAI-compatible endpoint.
+reply) otherwise. The loop runs on any OpenAI-compatible endpoint.
 
 ### The TUI
 
 `aether tui` launches a ratatui interface with a chrome header (brand, screen,
-model, provider, version) and a tab bar — **chat · agent · sessions**:
+model, provider, version) and a tab bar: **chat · agent · sessions**.
 
-- **Sessions** — pick a past session or start fresh, keyboard-first
-- **Chat** — transcript with role-colored messages, plan cards (```plan
+- **Sessions**: pick a past session or start fresh, keyboard-first
+- **Chat**: transcript with role-colored messages, plan cards (```plan
   fences become bordered cards with a todo progress meter), and a status line
   (ready / thinking / streaming with token count)
-- **Agent** — three live panels (PLAN · BUILD · ROUTE) fed by the agent loop's
+- **Agent**: three live panels (PLAN · BUILD · ROUTE) fed by the agent loop's
   observer channel: iteration, tool-call, and verdict counters update in real
   time while the three-model loop runs
 
 Mouse-wheel scrolling and a live token ledger round it out, so you always know
 what a session costs before you commit to it.
 
+**New in v0.3.0+:**
+
+- Welcome logo screen on an empty chat, plus a right-hand usage/session rail
+- Terminal title restored on exit; model picker with custom model + API key
+- Instant thinking spinner and a live plan/build/route badge while the loop runs
+- Editing shortcuts: `ctrl+backspace`, `ctrl+L`, `ctrl+W`; `ctrl+C` shows a confirm dialog
+
 ### MCP server
 
 `aether-mcp` speaks the Model Context Protocol over **stdio** and
 **Streamable HTTP**. Your editor, your agents, and Aether share one
-context layer — sessions, recall, and sync exposed as tools.
+context layer: sessions, recall, and sync exposed as tools.
 
 ### Sync
 
 Sessions sync to a **GitHub gist** or a **local folder**, merged line-by-line
-with origin fingerprints — concurrent edits never silently overwrite.
+with origin fingerprints. Concurrent edits never silently overwrite.
 
 ## Workspace
 
@@ -277,7 +315,7 @@ Requirements: **Rust 1.97+** (edition 2024), a C toolchain for linking.
 
 ## Status
 
-Phase 0–4 complete — the binary works end to end. Six root commands
+Phase 0-4 complete. The binary works end to end. Six root commands
 (`ask`, `chat`, `agent`, `tui`, `provider`, `session`); the legacy names
 (`use`, `models`, `providers`, `sessions`, `recall`, `sync`, `undo`) still
 parse but print a deprecation notice:
@@ -292,7 +330,7 @@ parse but print a deprecation notice:
 - [x] `benchmark/` — reproducible harness: **4.99 MB · ~112 ms · ~5 MB RSS**
 
 > **Stability note** — the checklist above means the features exist and pass
-> their test suites (167 tests, all green), not that the public API is frozen.
+> their test suites (267 tests, all green), not that the public API is frozen.
 > The **CLI surface** (`ask`/`agent`/`tui` flags, config file format, JSONL
 > session schema) is still pre-1.0 and may shift; the **interactive TUI** and
 > session files you create today are the least stable parts. `CHANGELOG.md`
@@ -305,7 +343,7 @@ parse but print a deprecation notice:
 `docs/` holds the migration blueprint and per-phase specs. Every module cites
 the original TypeScript file it ports; behavior is verified against golden
 outputs rather than re-implemented from memory. That discipline is what made
-this more than a rewrite — it's a faithful, faster, dependency-free twin.
+this more than a rewrite: it's a faithful, faster, dependency-free twin.
 
 ### Docs index
 
@@ -322,7 +360,7 @@ this more than a rewrite — it's a faithful, faster, dependency-free twin.
 
 ## Security
 
-Aether is a local-first tool that can execute commands on your behalf — read
+Aether is a local-first tool that can execute commands on your behalf. Read
 the [threat model](SECURITY.md) before granting it elevated trust. In short:
 
 - **File tools** (`read_file`, `write_file`, `list_dir`, `search`) are
@@ -330,7 +368,7 @@ the [threat model](SECURITY.md) before granting it elevated trust. In short:
   bytes are rejected before touching disk.
 - **`run_command`** executes via `/bin/sh -c` with a **30-second timeout**
   and **128 KB output cap**. It is *not* network-isolated and has no
-  allow-list — treat it as "run this command as you". Only run `agent` in
+  allow-list. Treat it as "run this command as you". Only run `agent` in
   directories you trust with shell access.
 - **API keys** are read from environment variables / config files; they are
   never written into sessions or logs.
@@ -349,4 +387,4 @@ cargo test --workspace
 
 ## License
 
-[MIT](./LICENSE) — build on it, fork it, vendor it.
+[MIT](./LICENSE). Build on it, fork it, vendor it.
