@@ -17,6 +17,11 @@ minors may still break surface APIs).
 
 ### Changed
 
+- TUI: chat input editing matches opencode — ctrl+Backspace / ctrl+W
+  delete exactly one previous word (whitespace-delimited, word by word on
+  repeat), plain Backspace still deletes a single char.
+- TUI: ctrl+L clears the chat transcript and resets the scroll on any
+  screen (same path as `/clear`), staying on the current screen.
 - TUI: error/status indicators render as plain colored text — `✗` replaced
   with an `error:` label in the danger style, `⏳`/`●` status glyphs dropped
   from the chat status line (list cursor `▸` and spinner kept).

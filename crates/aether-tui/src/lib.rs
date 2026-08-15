@@ -591,6 +591,12 @@ impl RatatuiTui {
         }
     }
 
+    /// Clear the chat transcript and reset the scroll (ctrl+L, /clear).
+    fn clear_transcript(&mut self) {
+        self.chat.clear();
+        self.chat_scroll = 0;
+    }
+
     fn on_key(&mut self, key: KeyEvent) -> KeyAction {
         // ctrl+C toggles the quit-confirmation dialog on any screen; it
         // never quits directly (opencode behavior).
@@ -608,6 +614,11 @@ impl RatatuiTui {
                 Screen::Palette => self.close_palette(),
                 _ => self.open_palette(),
             }
+            return KeyAction::Continue;
+        }
+        // ctrl+L clears the chat transcript on any screen (opencode-style).
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('l') {
+            self.clear_transcript();
             return KeyAction::Continue;
         }
         // Tab cycles the main screens: Chat -> Agent -> Sessions -> Chat.
@@ -761,7 +772,7 @@ impl RatatuiTui {
                         self.screen = Screen::Sessions;
                         let _ = self.refresh_sessions();
                     }
-                    SlashCmd::Clear => self.chat.clear(),
+                    SlashCmd::Clear => self.clear_transcript(),
                     SlashCmd::Help => self.show_help(),
                     SlashCmd::Exit => return KeyAction::Quit,
                 }
@@ -1957,6 +1968,70 @@ mod tests {
         assert_eq!(app.input, "delete ");
         let _ = app.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
         assert_eq!(app.input, "delete");
+    }
+
+    #[test]
+    fn ctrl_backspace_deletes_one_word_at_a_time() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input: "foo bar ".into(),
+            ..Default::default()
+        };
+        let ctrl_bs = KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL);
+        let _ = app.on_key(ctrl_bs);
+        assert_eq!(app.input, "foo ");
+        let _ = app.on_key(ctrl_bs);
+        assert_eq!(app.input, "");
+    }
+
+    #[test]
+    fn ctrl_backspace_on_empty_or_whitespace_input_is_safe() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            input: "   ".into(),
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL));
+        assert_eq!(app.input, "");
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL));
+        assert_eq!(app.input, "");
+    }
+
+    #[test]
+    fn ctrl_l_clears_transcript_and_stays_on_screen() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            chat: vec![ChatRow {
+                role: "user".into(),
+                content: "keep me? no".into(),
+            }],
+            chat_scroll: 3,
+            ..Default::default()
+        };
+        let action = app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL));
+        assert_eq!(action, KeyAction::Continue);
+        assert_eq!(app.screen, Screen::Chat);
+        assert!(app.chat.is_empty());
+        assert_eq!(app.chat_scroll, 0);
+    }
+
+    #[test]
+    fn ctrl_l_clears_from_any_screen() {
+        let mut app = RatatuiTui {
+            screen: Screen::Sessions,
+            chat: vec![ChatRow {
+                role: "assistant".into(),
+                content: "stale".into(),
+            }],
+            ..Default::default()
+        };
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL));
+        assert_eq!(app.screen, Screen::Sessions);
+        assert!(app.chat.is_empty());
     }
 
     #[test]
