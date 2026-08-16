@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether logo exploration — 3 directions</title>
+<style>
+  :root { --bg:#0A0A0A; --ink:#F5F5F5; --muted:#A3A3A3; --hair:#2E2E2E; --mark:#E05D33; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--ink); font:15px/1.5 ui-monospace, "JetBrains Mono", monospace; padding:48px 24px; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  .sub { color:var(--muted); margin-bottom:32px; }
+  .row { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:24px; margin-bottom:40px; }
+  .card { border:1px solid var(--hair); border-radius:12px; padding:20px; }
+  .card h2 { font-size:14px; letter-spacing:.05em; margin-bottom:2px; }
+  .card .dir { color:var(--muted); font-size:12px; margin-bottom:16px; }
+  .swatches { display:flex; gap:16px; align-items:flex-start; }
+  .swatch { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .swatch img { width:96px; height:96px; border:1px solid var(--hair); border-radius:8px; }
+  .swatch.small img { width:16px; height:16px; border:none; }
+  .swatch span { font-size:10px; color:var(--muted); }
+  .why { margin-top:16px; color:var(--muted); font-size:13px; border-top:1px solid var(--hair); padding-top:12px; }
+  .why b { color:var(--ink); }
+  .mono-hint { color:var(--muted); font-size:11px; margin-top:8px; }
+  .mono-hint span { display:inline-block; background:var(--ink); color:var(--bg); padding:1px 6px; border-radius:4px; margin-right:6px; }
+  code { color:var(--mark); }
+</style>
+</head>
+<body>
+  <h1>Aether — logo exploration</h1>
+  <p class="sub">Three distinct directions · each full-color + single-color · regenerate with <code>python3 generate.py --direction &lt;name&gt; --stroke N --negative N --palette rust|term</code></p>
+
+  <div class="row">
+    <div class="card">
+      <h2>1 · Terminal Wind</h2>
+      <p class="dir">direction: <code>wind</code></p>
+      <div class="swatches">
+        <div class="swatch"><img src="out/aether-wind-color.svg" alt="wind color"><span>color</span></div>
+        <div class="swatch"><img src="out/aether-wind-mono.svg" alt="wind mono"><span>mono</span></div>
+        <div class="swatch small"><img src="out/aether-wind-mono.svg" alt="wind 16px"><span>16px</span></div>
+      </div>
+      <p class="why"><b>Why:</b> a <code>&gt;</code> prompt cursor whose apex trails into wind streaks — the tool that fills your terminal quietly, the way aether fills the sky. Reads as a single ASCII-adjacent glyph at 16px.</p>
+    </div>
+
+    <div class="card">
+      <h2>2 · Hex Crystal</h2>
+      <p class="dir">direction: <code>hex</code></p>
+      <div class="swatches">
+        <div class="swatch"><img src="out/aether-hex-color.svg" alt="hex color"><span>color</span></div>
+        <div class="swatch"><img src="out/aether-hex-mono.svg" alt="hex mono"><span>mono</span></div>
+        <div class="swatch small"><img src="out/aether-hex-mono.svg" alt="hex 16px"><span>16px</span></div>
+      </div>
+      <p class="why"><b>Why:</b> a hexagon — Rust's compiled single binary — with a terminal cursor cut from its core in negative space. Solid, self-contained, binary.</p>
+    </div>
+
+    <div class="card">
+      <h2>3 · Ethereal A</h2>
+      <p class="dir">direction: <code>aether</code></p>
+      <div class="swatches">
+        <div class="swatch"><img src="out/aether-aether-color.svg" alt="aether color"><span>color</span></div>
+        <div class="swatch"><img src="out/aether-aether-mono.svg" alt="aether mono"><span>mono</span></div>
+        <div class="swatch small"><img src="out/aether-aether-mono.svg" alt="aether 16px"><span>16px</span></div>
+      </div>
+      <p class="why"><b>Why:</b> the letter A — solid right leg, left leg dissolving into wind lines. Negative space is the sky the aether occupies. The name, literally.</p>
+    </div>
+  </div>
+
+  <p class="mono-hint"><span>16px test</span> each mono mark is shown at true favicon size — if it stops reading, raise <code>--stroke</code> or lower <code>--negative</code>.</p>
+  <p class="mono-hint"><span>palettes</span> rust (<code>#E05D33</code> on <code>#0A0A0A</code>) · terminal green (<code>--palette term</code>). Mono exports are single-color on transparent for any background.</p>
+</body>
+</html>
