@@ -1,36 +1,41 @@
-Output site/assets/img/demo.gif
+Output "site/assets/img/demo.gif"
 Set Shell bash
 Set FontSize 22
 Set Width 1150
 Set Height 640
 Set Padding 20
 Set Margin 10
-Set PlaybackSpeed 1
+Set PlaybackSpeed 1.1
 
-# Aether v0.3 TUI — sessions list (right rail shows usage live)
-Type "AETHER_CONFIG_DIR=/tmp/aether-gif-demo /tmp/opencode/aether-build/release/aether tui"
+# 1. Launch Aether TUI (starts in sessions view with token ledger)
+Type "AETHER_CONFIG_DIR=/tmp/aether-gif-demo /home/zaikabdou1/bin/aether tui"
 Enter
 Sleep 2.5s
 
-# Open the first session into the chat transcript
+# 2. Open new session to showcase the new mathematically aligned ASCII logo
 Enter
-Sleep 2.5s
+Sleep 3.5s
 
-# Type a question into the input box
-Type "summarize our agent loop work"
+# 3. Type a message into the chat prompt
+Type "what is the 3-model agent loop?"
 Sleep 2s
 
-# Tab to the Agent screen (live plan -> build -> route panels)
+# 4. Tab to the 3-panel Agent screen (Plan -> Build -> Route)
 Tab
 Sleep 3s
 
-# Tab to the session list
+# 5. Tab back to the Sessions screen
 Tab
 Sleep 2s
 
-# Tab back to the chat
-Tab
-Sleep 2s
+# 6. Select and open the existing session to show transcript & token accounting
+Down
+Sleep 1s
+Enter
+Sleep 3.5s
 
-# Quit
+# 7. Return to sessions and quit cleanly with session epilogue
+Escape
+Sleep 1s
 Type "q"
+Sleep 1.5s
