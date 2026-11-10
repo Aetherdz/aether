@@ -163,29 +163,29 @@ pub fn usage_line(input: u64, output: u64, context_window: u64) -> String {
 /// plan → build → route flow. Each line is a `&str`; callers may join them
 /// vertically for a sidebar or print one line per row.
 pub const LOGO: [&str; 5] = [
-    "      ▲      ",
-    "     ▲ ▲     ",
-    "    ▲   ▲    ",
-    "   ▲     ▲   ",
-    "  ▲ ▲ ▲ ▲ ▲  ",
+    "   ▲   ",
+    "  ▲ ▲  ",
+    " ▲   ▲ ",
+    "▲ ━━━ ▲",
+    "▲     ▲",
 ];
 
 /// Render the full logo as one multi-line `Line` per row, with the apex in
 /// brand green and the base in cyan, ending with the wordmark.
 pub fn render_logo() -> Vec<Line<'static>> {
+    let colors = [
+        ACCENT,
+        CYAN,
+        CYAN,
+        Color::Rgb(251, 146, 60),
+        AI,
+    ];
     let mut out = Vec::with_capacity(LOGO.len() + 1);
     for (i, row) in LOGO.iter().enumerate() {
-        let color = if i == 0 {
-            ACCENT
-        } else if i == LOGO.len() - 1 {
-            AI
-        } else {
-            CYAN
-        };
-        out.push(Line::from(Span::styled(*row, Style::new().fg(color))));
+        out.push(Line::from(Span::styled(*row, Style::new().fg(colors[i]))));
     }
     out.push(Line::from(Span::styled(
-        "aether",
+        " aether",
         Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
     )));
     out

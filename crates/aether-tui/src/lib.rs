@@ -312,25 +312,27 @@ fn agent_badge(phase: agent_screen::ScreenPhase) -> Line<'static> {
 }
 
 /// Welcome screen for an empty chat: the aether logo centered in the
-/// transcript, a `plan · build · route` tagline on the wordmark line, and a
-/// muted hint line — vertically centered inside the transcript's inner area.
+/// Render the welcome block for an empty session: the ASCII logo in the
+/// transcript, a `plan · build · route` tagline, and a muted hint line —
+/// vertically and horizontally centered inside the transcript's inner area.
 /// Pure — unit-testable without a terminal.
 fn welcome_rows(width: u16, height: u16) -> Vec<Line<'static>> {
     let inner = width.saturating_sub(2) as usize;
     let mut rows: Vec<Line<'static>> = Vec::new();
     let logo = chrome::render_logo();
-    let last = logo.len() - 1;
-    for (i, logo_line) in logo.into_iter().enumerate() {
-        let mut spans = logo_line.spans;
-        if i == last {
-            spans.push(Span::styled(" — plan · build · route", theme::muted()));
-        }
-        let text_len: usize = spans.iter().map(|s| s.width()).sum();
+    for logo_line in logo {
+        let text_len: usize = logo_line.spans.iter().map(|s| s.width()).sum();
         let pad = inner.saturating_sub(text_len) / 2;
         let mut full = vec![Span::raw(" ".repeat(pad))];
-        full.extend(spans);
+        full.extend(logo_line.spans);
         rows.push(Line::from(full));
     }
+    let tagline = "plan · build · route";
+    let pad_tagline = inner.saturating_sub(tagline.chars().count()) / 2;
+    rows.push(Line::from(vec![
+        Span::raw(" ".repeat(pad_tagline)),
+        Span::styled(tagline, theme::muted()),
+    ]));
     rows.push(Line::from(""));
     let hint = "type a message to start · / for commands · ctrl+P for model";
     let pad = inner.saturating_sub(hint.chars().count()) / 2;
