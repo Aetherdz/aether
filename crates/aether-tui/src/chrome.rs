@@ -163,11 +163,11 @@ pub fn usage_line(input: u64, output: u64, context_window: u64) -> String {
 /// plan → build → route flow. Each line is a `&str`; callers may join them
 /// vertically for a sidebar or print one line per row.
 pub const LOGO: [&str; 5] = [
-    "      ▲",
-    "     ▲ ▲",
-    "    ▲   ▲",
-    "   ▲     ▲",
-    "  ▲ ▲ ▲ ▲ ▲",
+    "      ▲      ",
+    "     ▲ ▲     ",
+    "    ▲   ▲    ",
+    "   ▲     ▲   ",
+    "  ▲ ▲ ▲ ▲ ▲  ",
 ];
 
 /// Render the full logo as one multi-line `Line` per row, with the apex in

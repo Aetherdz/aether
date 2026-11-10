@@ -182,7 +182,11 @@ pub fn normalize_custom_providers(raw: &serde_json::Value) -> Vec<CustomProvider
         let Some(name) = obj.get("name").and_then(serde_json::Value::as_str) else {
             continue;
         };
-        let Some(base_url) = obj.get("baseURL").and_then(serde_json::Value::as_str) else {
+        let Some(base_url) = obj
+            .get("baseURL")
+            .or_else(|| obj.get("baseUrl"))
+            .and_then(serde_json::Value::as_str)
+        else {
             continue;
         };
         let models = obj
@@ -286,13 +290,17 @@ mod tests {
         // Entries missing name/baseURL are dropped.
         let mixed = serde_json::json!([
             {"name": "ok", "baseURL": "https://x/v1"},
+            {"name": "ok2", "baseUrl": "https://z/v1"},
             {"name": "no-base"},
             {"baseURL": "https://y/v1"},
             "not-an-object"
         ]);
         let normalized = normalize_custom_providers(&mixed);
-        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized.len(), 2);
         assert_eq!(normalized[0].name, "ok");
+        assert_eq!(normalized[0].base_url, "https://x/v1");
+        assert_eq!(normalized[1].name, "ok2");
+        assert_eq!(normalized[1].base_url, "https://z/v1");
     }
 
     #[test]

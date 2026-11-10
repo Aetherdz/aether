@@ -36,6 +36,24 @@ minors may still break surface APIs).
   `aether — agent loop`) and switches to `aether — <session> | <model>`
   (session title truncated to 40 chars) once a session is opened, like
   opencode/claude-code.
+- TUI: opencode-style session epilogue on exit — when leaving the TUI with an
+  active session, prints a clean summary with session title and resume hint
+  (`aether session resume <id>`).
+
+### Fixed
+
+- TUI: chat input typing for `j` and `k` — fixed a critical regression where
+  letters `j` and `k` were swallowed by chat transcript scrolling even while
+  the user was actively typing into the input box.
+- TUI: sessions screen error styling — removed duplicate unstyled footer call
+  that was overwriting the danger-styled error message.
+- TUI: plan card border geometry — padded top and bottom card borders to match
+  the full card width for consistent rounded box-drawing alignment.
+- ASCII Logo: mathematical symmetry and alignment — unified logo rows to a
+  consistent 13-character bounding box so the apex, crossbars, and wordmark
+  remain centered without skew across all terminal dimensions.
+- Config: custom provider casing — normalized `baseURL` and `baseUrl` so both
+  variants are properly deserialized without silent drops.
 
 ### Changed
 

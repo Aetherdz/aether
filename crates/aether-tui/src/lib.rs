@@ -930,11 +930,19 @@ impl RatatuiTui {
                 self.screen = Screen::Commands;
                 KeyAction::Continue
             }
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Char('j') if self.input.is_empty() => {
                 self.chat_scroll = self.chat_scroll.saturating_add(1);
                 KeyAction::Continue
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Char('k') if self.input.is_empty() => {
+                self.chat_scroll = self.chat_scroll.saturating_sub(1);
+                KeyAction::Continue
+            }
+            KeyCode::Down => {
+                self.chat_scroll = self.chat_scroll.saturating_add(1);
+                KeyAction::Continue
+            }
+            KeyCode::Up => {
                 self.chat_scroll = self.chat_scroll.saturating_sub(1);
                 KeyAction::Continue
             }
@@ -1389,7 +1397,6 @@ impl RatatuiTui {
         let right =
             "j/k or wheel: move · Enter: open · d: delete · r: rename · ctrl+P: model · q: quit";
         self.render_footer_styled(frame, footer_area, &left, right, left_style);
-        self.render_footer(frame, footer_area, &left, right);
     }
 
     fn draw_chat(&mut self, frame: &mut Frame, body: Rect) {
@@ -1998,6 +2005,16 @@ impl RatatuiTui {
         });
         self.chat_scroll = self.chat.len().saturating_sub(1);
     }
+
+    /// Return the opencode-style session epilogue to print after the TUI exits.
+    pub fn epilogue(&self) -> Option<String> {
+        let session = self.active.as_ref()?;
+        let title = session.title().unwrap_or_else(|_| "(untitled)".to_string());
+        let id = session.id();
+        Some(format!(
+            "\n  \x1b[90mSession   \x1b[0m \x1b[1m{title}\x1b[0m\n  \x1b[90mContinue  \x1b[0m \x1b[1maether session resume {id}\x1b[0m\n"
+        ))
+    }
 }
 
 impl Tui for RatatuiTui {
@@ -2016,9 +2033,13 @@ impl Tui for RatatuiTui {
         let result = tokio::runtime::Runtime::new()
             .map_err(|e| TuiError::Terminal(e.to_string()))
             .and_then(|rt| rt.block_on(self.event_loop(&mut terminal)));
+        let epilogue = self.epilogue();
         let _ = crossterm::execute!(std::io::stdout(), DisableMouseCapture);
         ratatui::restore();
         restore_title(original_title.as_deref());
+        if let Some(msg) = epilogue {
+            println!("{msg}");
+        }
         result
     }
 }
@@ -3161,9 +3182,11 @@ mod tests {
         use ratatui::backend::TestBackend;
 
         let _g = aether_core::testutil::lock_env();
-        let dir = isolate("palette-custom");
-        let mut config = aether_core::config::AetherConfig::default();
-        config.default_provider = "myllm".to_string();
+        let _dir = isolate("palette-custom");
+        let mut config = aether_core::config::AetherConfig {
+            default_provider: "myllm".to_string(),
+            ..Default::default()
+        };
         config.providers.custom.push(CustomProviderConfig {
             name: "myllm".into(),
             base_url: "http://localhost:1234/v1".into(),
@@ -3485,7 +3508,7 @@ mod tests {
     #[test]
     fn client_for_model_uses_custom_provider_client() {
         let _g = aether_core::testutil::lock_env();
-        let dir = isolate("client-for-model");
+        let _dir = isolate("client-for-model");
         let mut config = aether_core::config::AetherConfig::default();
         config.providers.custom.push(CustomProviderConfig {
             name: "localhost:9999".into(),
@@ -3969,5 +3992,34 @@ mod tests {
             !text.contains('▲'),
             "a chat with messages must not show the welcome, got: {text:?}"
         );
+    }
+
+    #[test]
+    fn chat_input_allows_typing_j_and_k() {
+        let mut app = RatatuiTui {
+            screen: Screen::Chat,
+            ..Default::default()
+        };
+        // Initial input is empty: 'j' and 'k' scroll when empty
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.input, "");
+
+        // Type a letter first, or type directly
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert_eq!(app.input, "p");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.input, "pj");
+        let _ = app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.input, "pjk");
+
+        // With Down and Up keys, scrolling still works while input has text
+        let _ = app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.input, "pjk");
+    }
+
+    #[test]
+    fn epilogue_returns_none_when_no_active_session() {
+        let app = RatatuiTui::default();
+        assert!(app.epilogue().is_none());
     }
 }

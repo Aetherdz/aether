@@ -95,14 +95,19 @@ pub fn render_plan_card(card: &PlanCard, width: u16) -> Vec<Line<'static>> {
     let inner = width.saturating_sub(2) as usize;
     let mut out: Vec<Line<'static>> = Vec::new();
 
-    // Top border with the title in violet bold.
+    // Top border with the title in violet bold, spanning the full card width.
+    let max_title = inner.saturating_sub(2);
+    let display_title = truncate_to_width(card.title, max_title);
+    let title_len = display_title.chars().count();
+    let dashes_after = inner.saturating_sub(title_len + 1);
+
     let mut top = Line::default();
     top.push_span(Span::raw("╭─"));
     top.push_span(Span::styled(
-        card.title.to_string(),
+        display_title,
         Style::default().fg(VIOLET).add_modifier(Modifier::BOLD),
     ));
-    top.push_span(Span::raw("─╮"));
+    top.push_span(Span::raw(format!("{}╮", "─".repeat(dashes_after))));
     out.push(top);
 
     // Body rows, each padded to the inner width so the right border aligns.
@@ -119,7 +124,7 @@ pub fn render_plan_card(card: &PlanCard, width: u16) -> Vec<Line<'static>> {
         }
     }
 
-    out.push(Line::from(Span::raw("╰─╯")));
+    out.push(Line::from(Span::raw(format!("╰{}╯", "─".repeat(inner)))));
     out
 }
 
